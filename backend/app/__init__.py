@@ -1,0 +1,1 @@
+"""VibeFinance backend application."""
