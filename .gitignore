@@ -14,6 +14,7 @@ __pycache__/
 # Node
 node_modules/
 dist/
+supabase/.temp/
 
 # Editors and OS
 .DS_Store

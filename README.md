@@ -8,7 +8,7 @@ portfolio risk through a multi-agent workflow.
 
 - `frontend/` — React, TypeScript, and Vite dashboard
 - `backend/` — FastAPI application and agent orchestration
-- `supabase/` — database migrations (added with the data layer)
+- `supabase/` — versioned PostgreSQL and pgvector migrations
 - `docs/` — architecture, evaluation, and demo documentation
 
 ## Local development
@@ -35,3 +35,14 @@ npm run dev
 ```
 
 The dashboard is available at `http://localhost:5173`.
+
+### Supabase CLI
+
+The CLI is installed as a pinned root development dependency:
+
+```bash
+npm install
+npm run supabase -- --version
+```
+
+Run other commands with `npm run supabase -- <command>` or `npx supabase <command>`.
