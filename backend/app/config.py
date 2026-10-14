@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,6 +11,7 @@ class Settings(BaseSettings):
     database_url: str | None = None
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
+    market_data_mode: Literal["demo", "live"] = "live"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
