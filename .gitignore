@@ -20,3 +20,6 @@ supabase/.temp/
 .DS_Store
 .idea/
 .vscode/
+
+# Local planning notes
+docs/implementation-plan.md
