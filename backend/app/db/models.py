@@ -92,7 +92,12 @@ class InvestorProfile(Base):
     auth_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
     name: Mapped[str] = mapped_column(String(120))
     risk_tolerance: Mapped[RiskTolerance] = mapped_column(
-        Enum(RiskTolerance, name="risk_tolerance", native_enum=False)
+        Enum(
+            RiskTolerance,
+            name="risk_tolerance",
+            native_enum=False,
+            values_callable=lambda enum: [item.value for item in enum],
+        )
     )
     investment_horizon_years: Mapped[int] = mapped_column(Integer)
     max_position_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=10)
@@ -190,7 +195,13 @@ class AnalysisSession(Base):
     )
     as_of_date: Mapped[date] = mapped_column(Date)
     status: Mapped[RunStatus] = mapped_column(
-        Enum(RunStatus, name="run_status", native_enum=False), default=RunStatus.PENDING
+        Enum(
+            RunStatus,
+            name="run_status",
+            native_enum=False,
+            values_callable=lambda enum: [item.value for item in enum],
+        ),
+        default=RunStatus.PENDING,
     )
     input_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
@@ -211,7 +222,13 @@ class AgentRun(Base):
     )
     agent_name: Mapped[str] = mapped_column(String(80))
     status: Mapped[RunStatus] = mapped_column(
-        Enum(RunStatus, name="run_status", native_enum=False), default=RunStatus.PENDING
+        Enum(
+            RunStatus,
+            name="run_status",
+            native_enum=False,
+            values_callable=lambda enum: [item.value for item in enum],
+        ),
+        default=RunStatus.PENDING,
     )
     input_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     output_data: Mapped[dict[str, Any] | None] = mapped_column(JSONB)

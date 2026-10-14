@@ -12,6 +12,20 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
     market_data_mode: Literal["demo", "live"] = "live"
+    filing_allowed_hosts: str = "nseindia.com,bseindia.com,sebi.gov.in,ril.com"
+    filing_max_download_mb: int = 25
+    llm_provider: Literal["openai", "anthropic"] | None = None
+    llm_model: str | None = None
+    llm_api_key: str | None = None
+    llm_base_url: str | None = None
+
+    @property
+    def filing_host_allowlist(self) -> set[str]:
+        return {
+            host.strip().lower()
+            for host in self.filing_allowed_hosts.split(",")
+            if host.strip()
+        }
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

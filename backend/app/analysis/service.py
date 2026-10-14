@@ -12,10 +12,22 @@ from app.analysis.contracts import (
     AnalysisRequest,
     AnalysisResponse,
 )
-from app.analysis.demo import build_demo_nodes
+from app.analysis.demo import (
+    build_demo_nodes,
+    compose_deterministic_recommendation,
+    demo_filing_agent,
+    demo_portfolio_agent,
+)
 from app.analysis.graph import build_analysis_graph
+from app.analysis.synthesis import LlmRecommendationComposer, build_synthesis_agent
 from app.config import get_settings
+from app.db.session import get_session_factory
+from app.filings import build_filing_agent
+from app.filings.interpreter import LlmFilingInterpreter
+from app.filings.query_planner import FilingQueryPlanner
+from app.llm import build_chat_model
 from app.market import YahooFinanceProvider, build_market_agent
+from app.portfolio import build_portfolio_agent
 
 
 class AnalysisNotFoundError(LookupError):
@@ -34,12 +46,47 @@ class InMemoryAnalysisService:
         self._requests: dict[UUID, AnalysisRequest] = {}
         self._lock = Lock()
         settings = get_settings()
+        chat_model = build_chat_model(settings)
         market_agent = (
             build_market_agent(YahooFinanceProvider())
             if settings.market_data_mode == "live"
             else None
         )
-        self._graph = build_analysis_graph(build_demo_nodes(market_agent=market_agent))
+        portfolio_agent = (
+            build_portfolio_agent(
+                get_session_factory(),
+                fallback=(
+                    demo_portfolio_agent if settings.market_data_mode == "demo" else None
+                ),
+            )
+            if settings.database_url
+            else None
+        )
+        filing_agent = (
+            build_filing_agent(
+                get_session_factory(),
+                query_planner=FilingQueryPlanner(chat_model),
+                interpreter=LlmFilingInterpreter(chat_model) if chat_model else None,
+                fallback=demo_filing_agent if settings.market_data_mode == "demo" else None,
+            )
+            if settings.database_url
+            else None
+        )
+        self._graph = build_analysis_graph(
+            build_demo_nodes(
+                market_agent=market_agent,
+                filing_agent=filing_agent,
+                portfolio_agent=portfolio_agent,
+                compose_recommendation=(
+                    build_synthesis_agent(
+                        LlmRecommendationComposer(chat_model),
+                        compose_deterministic_recommendation,
+                    )
+                    if chat_model
+                    else None
+                ),
+            )
+        )
 
     def create(self, request: AnalysisRequest) -> AnalysisJobAccepted:
         session_id = uuid4()

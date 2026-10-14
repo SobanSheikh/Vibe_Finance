@@ -74,7 +74,7 @@ def _market_agent(_: AnalysisState) -> dict[str, AgentResult]:
     }
 
 
-def _filing_agent(_: AnalysisState) -> dict[str, AgentResult]:
+def demo_filing_agent(_: AnalysisState) -> dict[str, AgentResult]:
     started_at = perf_counter()
     evidence = [
         Evidence(
@@ -114,7 +114,7 @@ def _filing_agent(_: AnalysisState) -> dict[str, AgentResult]:
     }
 
 
-def _portfolio_agent(state: AnalysisState) -> dict[str, AgentResult]:
+def demo_portfolio_agent(state: AnalysisState) -> dict[str, AgentResult]:
     started_at = perf_counter()
     profile = state["request"].investor_profile
     conservative = profile.risk_tolerance == RiskTolerance.LOW
@@ -207,7 +207,9 @@ def _resolve_conflicts(state: AnalysisState) -> dict[str, list[EvidenceConflict]
     }
 
 
-def _compose_recommendation(state: AnalysisState) -> dict[str, Recommendation]:
+def compose_deterministic_recommendation(
+    state: AnalysisState,
+) -> dict[str, Recommendation]:
     results = [state["market_result"], state["filing_result"], state["portfolio_result"]]
     portfolio_signal = state["portfolio_result"].signals[0]
     all_evidence = [evidence.id for result in results for evidence in result.evidence]
@@ -231,7 +233,7 @@ def _compose_recommendation(state: AnalysisState) -> dict[str, Recommendation]:
             supporting_evidence_ids=all_evidence[:2],
             opposing_evidence_ids=all_evidence[2:],
             personalized_risks=(
-                ["The synthetic sector concentration exceeds the conservative profile limit."]
+                ["Recorded portfolio concentration exceeds the selected profile's limit."]
                 if is_high_risk
                 else []
             ),
@@ -257,15 +259,22 @@ def _collect_metrics(state: AnalysisState) -> dict[str, SessionMetrics]:
     }
 
 
-def build_demo_nodes(market_agent: AnalysisNode | None = None) -> AnalysisGraphNodes:
+def build_demo_nodes(
+    market_agent: AnalysisNode | None = None,
+    filing_agent: AnalysisNode | None = None,
+    portfolio_agent: AnalysisNode | None = None,
+    compose_recommendation: AnalysisNode | None = None,
+) -> AnalysisGraphNodes:
     """Return a deterministic workflow for end-to-end integration and demos."""
 
     return AnalysisGraphNodes(
         market_agent=market_agent or _market_agent,
-        filing_agent=_filing_agent,
-        portfolio_agent=_portfolio_agent,
+        filing_agent=filing_agent or demo_filing_agent,
+        portfolio_agent=portfolio_agent or demo_portfolio_agent,
         validate_evidence=_validate_evidence,
         resolve_conflicts=_resolve_conflicts,
-        compose_recommendation=_compose_recommendation,
+        compose_recommendation=(
+            compose_recommendation or compose_deterministic_recommendation
+        ),
         collect_metrics=_collect_metrics,
     )

@@ -185,6 +185,21 @@ h1 {
   background: var(--surface);
 }
 
+.selector select {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.selector select option {
+  color: var(--text);
+  background: var(--surface);
+}
+
 .selector:hover,
 .button--secondary:hover {
   border-color: #3d4b40;
@@ -342,9 +357,60 @@ h1 {
 .signal-card,
 .agent-card,
 .citation-card,
-.conflict-card {
+.conflict-card,
+.portfolio-card {
   border: 1px solid var(--line);
   background: var(--surface);
+}
+
+.portfolio-card {
+  padding: 16px;
+  border-radius: 10px;
+}
+
+.portfolio-list {
+  display: grid;
+  gap: 10px;
+}
+
+.portfolio-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.portfolio-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.portfolio-row > div {
+  display: grid;
+  gap: 3px;
+}
+
+.portfolio-row > div:last-child {
+  text-align: right;
+}
+
+.portfolio-row strong {
+  font-size: 10px;
+}
+
+.portfolio-row span,
+.portfolio-limits {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.portfolio-limits {
+  margin-top: 14px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line-soft);
+  font-family: "Geist Mono", monospace;
 }
 
 .signal-card {
@@ -508,6 +574,11 @@ h1 {
   color: var(--info);
   font-family: "Geist Mono", monospace;
   font-size: 9px;
+}
+
+.citation-card header a {
+  display: inline-flex;
+  color: inherit;
 }
 
 .citation-card blockquote {

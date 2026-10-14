@@ -1,4 +1,5 @@
-export type RiskTolerance = 'low' | 'medium' | 'high'
+import type { Company, InvestorProfile } from './catalog'
+
 export type SignalTone = 'positive' | 'warning' | 'negative' | 'info'
 
 export interface Signal {
@@ -11,11 +12,13 @@ export interface Signal {
 
 export interface Evidence {
   id: string
+  kind: 'market_observation' | 'document_excerpt' | 'portfolio_calculation'
   title: string
   observation: string
   source_name: string
   source_url: string | null
   page_number: number | null
+  relevance: number | null
   is_synthetic: boolean
 }
 
@@ -63,29 +66,26 @@ interface AnalysisJob {
 
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
-const profileIds: Record<RiskTolerance, string> = {
-  low: 'a7e99bdf-9459-4806-ada5-a596cf4d453c',
-  medium: '9c3bfb92-8815-43f7-8316-851c7f8d8ae9',
-  high: '16b24f78-e814-4e72-861e-81f4d241fc9d',
-}
-
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds))
 
-export async function runDemoAnalysis(riskTolerance: RiskTolerance): Promise<AnalysisResult> {
+export async function runAnalysis(
+  company: Company,
+  investorProfile: InvestorProfile,
+): Promise<AnalysisResult> {
   const createResponse = await fetch(`${apiUrl}/api/analysis`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       company: {
-        id: 'ebce53d4-8628-4df2-8aa9-b5f1ddbd94f8',
-        symbol: 'RELIANCE',
-        exchange: 'NSE',
+        id: company.id,
+        symbol: company.symbol,
+        exchange: company.exchange,
       },
       investor_profile: {
-        id: profileIds[riskTolerance],
-        risk_tolerance: riskTolerance,
-        investment_horizon_years: riskTolerance === 'low' ? 5 : 8,
+        id: investorProfile.id,
+        risk_tolerance: investorProfile.risk_tolerance,
+        investment_horizon_years: investorProfile.investment_horizon_years,
       },
       as_of_date: new Date().toISOString().slice(0, 10),
     }),

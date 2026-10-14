@@ -2,7 +2,6 @@ import {
   Activity,
   BriefcaseBusiness,
   Building2,
-  ChevronDown,
   FileSearch,
   LayoutDashboard,
   Search,
@@ -15,12 +14,20 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import {
-  runDemoAnalysis,
+  runAnalysis as requestAnalysis,
   type AnalysisResult,
-  type RiskTolerance,
   type Signal,
   type SignalTone,
 } from './api/analysis'
+import {
+  getCompanies,
+  getHoldings,
+  getProfiles,
+  type Company,
+  type Holding,
+  type InvestorProfile,
+  type RiskTolerance,
+} from './api/catalog'
 import { AgentCard } from './components/AgentCard'
 import { Button } from './components/Button'
 import { CitationCard } from './components/CitationCard'
@@ -38,10 +45,10 @@ const navigation = [
   { label: 'Evaluation', icon: Activity },
 ]
 
-const profileLabels: Record<RiskTolerance, string> = {
-  low: 'Ananya · Conservative',
-  medium: 'Mira · Balanced',
-  high: 'Aarav · Aggressive',
+const riskLabels: Record<RiskTolerance, string> = {
+  low: 'Conservative',
+  medium: 'Balanced',
+  high: 'Aggressive',
 }
 
 const agentPresentation = {
@@ -78,24 +85,56 @@ function signalValue(classification: Signal['classification']): string {
 function App() {
   const [apiStatus, setApiStatus] = useState<ApiStatus>('checking')
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
-  const [riskTolerance, setRiskTolerance] = useState<RiskTolerance>('low')
+  const [companies, setCompanies] = useState<Company[]>([])
+  const [profiles, setProfiles] = useState<InvestorProfile[]>([])
+  const [selectedCompanyId, setSelectedCompanyId] = useState('')
+  const [selectedProfileId, setSelectedProfileId] = useState('')
+  const [holdings, setHoldings] = useState<Holding[]>([])
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch(`${apiUrl}/api/health`, { signal: controller.signal })
-      .then((response) => {
+    Promise.all([
+      fetch(`${apiUrl}/api/health`, { signal: controller.signal }).then((response) => {
         if (!response.ok) throw new Error('API health check failed')
         return response.json()
+      }),
+      getCompanies(),
+      getProfiles(),
+    ])
+      .then(([, companyRows, profileRows]) => {
+        setCompanies(companyRows)
+        setProfiles(profileRows)
+        setSelectedCompanyId(
+          companyRows.find((company) => company.symbol === 'RELIANCE')?.id ??
+            companyRows[0]?.id ??
+            '',
+        )
+        setSelectedProfileId(
+          profileRows.find((profile) => profile.name === 'Ananya')?.id ??
+            profileRows[0]?.id ??
+            '',
+        )
+        setApiStatus('connected')
       })
-      .then(() => setApiStatus('connected'))
       .catch((reason: unknown) => {
         if (reason instanceof DOMException && reason.name === 'AbortError') return
         setApiStatus('unavailable')
+        setError('Could not load companies and investor profiles from the database.')
       })
     return () => controller.abort()
   }, [])
+
+  useEffect(() => {
+    if (!selectedProfileId) return
+    getHoldings(selectedProfileId)
+      .then(setHoldings)
+      .catch(() => setError('Could not load portfolio holdings for this profile.'))
+  }, [selectedProfileId])
+
+  const selectedCompany = companies.find((company) => company.id === selectedCompanyId)
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId)
 
   const signals = useMemo(
     () => analysis?.agents.flatMap((agent) => agent.signals) ?? [],
@@ -108,19 +147,22 @@ function App() {
   const hasLiveMarketEvidence = evidence.some(
     (item) => !item.is_synthetic && item.source_name === 'Yahoo Finance',
   )
+  const hasRealFilingEvidence = evidence.some(
+    (item) => item.kind === 'document_excerpt' && !item.is_synthetic && item.source_url,
+  )
 
-  const toggleProfile = () => {
-    setRiskTolerance((current) => (current === 'low' ? 'high' : 'low'))
+  const resetAnalysis = () => {
     setAnalysis(null)
     setRunStatus('idle')
     setError(null)
   }
 
-  const runAnalysis = async () => {
+  const runSelectedAnalysis = async () => {
+    if (!selectedCompany || !selectedProfile) return
     setRunStatus('running')
     setError(null)
     try {
-      setAnalysis(await runDemoAnalysis(riskTolerance))
+      setAnalysis(await requestAnalysis(selectedCompany, selectedProfile))
       setRunStatus('complete')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'The analysis workflow failed.')
@@ -166,25 +208,48 @@ function App() {
             <h1>Research decision room</h1>
           </div>
           <div className="workspace-header__actions">
-            <button className="selector" type="button">
+            <label className="selector" aria-label="Company">
               <Building2 aria-hidden="true" size={15} />
-              <span>Reliance · NSE</span>
-              <ChevronDown aria-hidden="true" size={14} />
-            </button>
-            <button
-              className="selector"
-              onClick={toggleProfile}
-              title="Switch demo investor profile"
-              type="button"
-            >
+              <select
+                onChange={(event) => {
+                  setSelectedCompanyId(event.target.value)
+                  resetAnalysis()
+                }}
+                value={selectedCompanyId}
+              >
+                {companies.map((company) => (
+                  <option key={company.id} value={company.id}>
+                    {company.symbol} · {company.exchange}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="selector" aria-label="Investor profile">
               <UserRound aria-hidden="true" size={15} />
-              <span>{profileLabels[riskTolerance]}</span>
-              <ChevronDown aria-hidden="true" size={14} />
-            </button>
+              <select
+                onChange={(event) => {
+                  setHoldings([])
+                  setSelectedProfileId(event.target.value)
+                  resetAnalysis()
+                }}
+                value={selectedProfileId}
+              >
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name} · {riskLabels[profile.risk_tolerance]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <Button
-              disabled={runStatus === 'running' || apiStatus !== 'connected'}
+              disabled={
+                runStatus === 'running' ||
+                apiStatus !== 'connected' ||
+                !selectedCompany ||
+                !selectedProfile
+              }
               icon={<Sparkles aria-hidden="true" size={16} />}
-              onClick={runAnalysis}
+              onClick={runSelectedAnalysis}
             >
               {runStatus === 'running' ? 'Running agents…' : 'Run intelligence'}
             </Button>
@@ -192,9 +257,11 @@ function App() {
         </header>
 
         <div className="demo-notice" role="note">
-          {hasLiveMarketEvidence
-            ? 'Hybrid mode: market observations are live; filings and portfolio holdings remain synthetic.'
-            : 'Demo mode: market observations, filing excerpts, and portfolio holdings are synthetic.'}
+          {hasLiveMarketEvidence && hasRealFilingEvidence
+            ? 'Live evidence: market observations, indexed filings, and stored portfolio holdings are active.'
+            : hasLiveMarketEvidence
+              ? 'Hybrid mode: market observations and stored holdings are active; ingest a filing to enable document evidence.'
+              : 'Ready: run intelligence to retrieve market, filing, and portfolio evidence.'}
         </div>
         {error && <div className="error-notice" role="alert">{error}</div>}
 
@@ -202,7 +269,7 @@ function App() {
           confidence={Math.round((analysis?.recommendation.confidence ?? 0) * 100)}
           detail={
             analysis?.recommendation.rationale.join(' ') ??
-            'Choose a demo profile and run the three-agent workflow to generate a recommendation.'
+            'Choose a company and investor profile, then run the three-agent workflow.'
           }
           title={analysis?.recommendation.summary ?? 'Ready for evidence-backed analysis'}
         />
@@ -261,6 +328,33 @@ function App() {
           </div>
 
           <aside className="evidence-column">
+            <section className="portfolio-card">
+              <header className="section-heading">
+                <h2>Portfolio snapshot</h2>
+                <span>{selectedProfile?.name ?? 'No profile'}</span>
+              </header>
+              <div className="portfolio-list">
+                {holdings.length ? holdings.map((holding) => (
+                  <div className="portfolio-row" key={holding.id}>
+                    <div>
+                      <strong>{holding.company.symbol}</strong>
+                      <span>{holding.company.sector}</span>
+                    </div>
+                    <div>
+                      <strong>{Number(holding.quantity).toLocaleString()} shares</strong>
+                      <span>Avg ₹{Number(holding.average_cost).toLocaleString()}</span>
+                    </div>
+                  </div>
+                )) : <p className="empty-state">No holdings recorded for this profile.</p>}
+              </div>
+              {selectedProfile && (
+                <p className="portfolio-limits">
+                  Limits: {Number(selectedProfile.max_position_percent)}% per position ·{' '}
+                  {Number(selectedProfile.max_sector_percent)}% per sector
+                </p>
+              )}
+            </section>
+
             <section className="section-block">
               <header className="section-heading">
                 <h2>Source evidence</h2>
@@ -273,6 +367,7 @@ function App() {
                     key={item.id}
                     quote={item.observation}
                     source={`${item.source_name}${item.page_number ? ` · p.${item.page_number}` : ''}`}
+                    sourceUrl={item.source_url}
                   />
                 )) : <p className="empty-state">Cited evidence will appear here.</p>}
               </div>
