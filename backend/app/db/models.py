@@ -42,6 +42,13 @@ class RunStatus(StrEnum):
     FAILED = "failed"
 
 
+class DocumentProcessingStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class Company(Base):
     __tablename__ = "companies"
 
@@ -49,7 +56,9 @@ class Company(Base):
     symbol: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     sector: Mapped[str] = mapped_column(String(120), index=True)
-    exchange: Mapped[str] = mapped_column(String(20), default="NSE")
+    exchange: Mapped[str] = mapped_column(String(20), default="NASDAQ")
+    sec_cik: Mapped[str | None] = mapped_column(String(10))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -152,11 +161,29 @@ class FinancialDocument(Base):
     title: Mapped[str] = mapped_column(String(500))
     document_type: Mapped[str] = mapped_column(String(80), index=True)
     reporting_period: Mapped[str | None] = mapped_column(String(80))
-    source_url: Mapped[str] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(Text)
     source_name: Mapped[str] = mapped_column(String(150))
+    source_provider: Mapped[str | None] = mapped_column(String(40), index=True)
+    external_id: Mapped[str | None] = mapped_column(String(80), index=True)
     published_at: Mapped[date | None] = mapped_column(Date)
     is_synthetic: Mapped[bool] = mapped_column(Boolean, default=False)
     checksum: Mapped[str | None] = mapped_column(String(64), unique=True)
+    storage_path: Mapped[str | None] = mapped_column(Text, unique=True)
+    file_name: Mapped[str | None] = mapped_column(String(255))
+    file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    mime_type: Mapped[str | None] = mapped_column(String(100))
+    processing_status: Mapped[DocumentProcessingStatus] = mapped_column(
+        Enum(
+            DocumentProcessingStatus,
+            name="document_processing_status",
+            native_enum=False,
+            values_callable=lambda enum: [item.value for item in enum],
+        ),
+        default=DocumentProcessingStatus.PENDING,
+    )
+    error_message: Mapped[str | None] = mapped_column(Text)
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    chunk_count: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     chunks: Mapped[list["DocumentChunk"]] = relationship(back_populates="document")

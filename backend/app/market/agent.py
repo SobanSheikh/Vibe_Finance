@@ -16,6 +16,9 @@ from app.analysis.state import AnalysisState
 from app.market.analytics import MarketAnalytics, calculate_market_analytics
 from app.market.models import MarketDataError, MarketDataProvider
 
+LOW_VOLATILITY_THRESHOLD = 0.20
+HIGH_VOLATILITY_THRESHOLD = 0.35
+
 
 def _momentum_classification(value: float) -> SignalClassification:
     if value >= 0.05:
@@ -29,6 +32,35 @@ def _volume_classification(analytics: MarketAnalytics) -> SignalClassification:
     if abs(analytics.volume_zscore_20d) < 2:
         return SignalClassification.NEUTRAL
     return _momentum_classification(analytics.return_30d)
+
+
+def _volatility_classification(value: float) -> SignalClassification:
+    if value < LOW_VOLATILITY_THRESHOLD:
+        return SignalClassification.POSITIVE
+    if value >= HIGH_VOLATILITY_THRESHOLD:
+        return SignalClassification.NEGATIVE
+    return SignalClassification.NEUTRAL
+
+
+def _volatility_confidence(value: float) -> float:
+    distance_to_boundary = min(
+        abs(value - LOW_VOLATILITY_THRESHOLD),
+        abs(value - HIGH_VOLATILITY_THRESHOLD),
+    )
+    return round(0.6 + min(distance_to_boundary / 0.1, 1) * 0.3, 2)
+
+
+def _volatility_rationale(value: float) -> str:
+    if value < LOW_VOLATILITY_THRESHOLD:
+        band = "low"
+    elif value >= HIGH_VOLATILITY_THRESHOLD:
+        band = "high"
+    else:
+        band = "moderate"
+    return (
+        f"Annualized volatility is {value:.1%}, classified as {band}: below 20% is "
+        "low, 20% to below 35% is moderate, and 35% or above is high."
+    )
 
 
 def _confidence(value: float, scale: float) -> float:
@@ -57,8 +89,9 @@ def build_market_agent(
             }
 
         latest = max(bars, key=lambda item: item.trading_date)
-        suffix = "NS" if company.exchange == "NSE" else "BO"
-        source_url = f"https://finance.yahoo.com/quote/{company.symbol}.{suffix}/history"
+        exchange_suffixes = {"NSE": ".NS", "BSE": ".BO"}
+        market_symbol = company.symbol + exchange_suffixes.get(company.exchange.upper(), "")
+        source_url = f"https://finance.yahoo.com/quote/{market_symbol}/history"
         return_evidence = Evidence(
             id=f"market-{company.symbol.lower()}-{latest.trading_date}-return-30d",
             kind=EvidenceKind.MARKET_OBSERVATION,
@@ -77,10 +110,24 @@ def build_market_agent(
             source_url=source_url,
             observed_at=latest.trading_date,
         )
+        volatility_evidence = Evidence(
+            id=f"market-{company.symbol.lower()}-{latest.trading_date}-volatility",
+            kind=EvidenceKind.MARKET_OBSERVATION,
+            title="30-session annualized volatility",
+            observation=(
+                "Annualized volatility from the latest 30 daily returns was "
+                f"{analytics.annualized_volatility:.1%}."
+            ),
+            source_name=provider.name,
+            source_url=source_url,
+            observed_at=latest.trading_date,
+        )
         momentum = _momentum_classification(analytics.return_30d)
         volume = _volume_classification(analytics)
+        volatility = _volatility_classification(analytics.annualized_volatility)
         momentum_confidence = _confidence(analytics.return_30d, 0.15)
         volume_confidence = _confidence(analytics.volume_zscore_20d, 3)
+        volatility_confidence = _volatility_confidence(analytics.annualized_volatility)
         return {
             "market_result": AgentResult(
                 agent=AgentName.MARKET,
@@ -90,7 +137,10 @@ def build_market_agent(
                     f"{volume.value}; annualized volatility is "
                     f"{analytics.annualized_volatility:.1%}."
                 ),
-                confidence=round((momentum_confidence + volume_confidence) / 2, 2),
+                confidence=round(
+                    (momentum_confidence + volume_confidence + volatility_confidence) / 3,
+                    2,
+                ),
                 signals=[
                     Signal(
                         dimension=SignalDimension.PRICE_MOMENTUM,
@@ -106,8 +156,15 @@ def build_market_agent(
                         rationale=volume_evidence.observation,
                         evidence_ids=[volume_evidence.id],
                     ),
+                    Signal(
+                        dimension=SignalDimension.PRICE_VOLATILITY,
+                        classification=volatility,
+                        confidence=volatility_confidence,
+                        rationale=_volatility_rationale(analytics.annualized_volatility),
+                        evidence_ids=[volatility_evidence.id],
+                    ),
                 ],
-                evidence=[return_evidence, volume_evidence],
+                evidence=[return_evidence, volume_evidence, volatility_evidence],
                 latency_ms=ceil((perf_counter() - started_at) * 1000),
             )
         }

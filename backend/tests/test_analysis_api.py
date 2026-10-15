@@ -31,8 +31,8 @@ def test_analysis_runs_end_to_end_in_background() -> None:
     job = job_response.json()
     assert job["status"] == "completed"
     assert len(job["result"]["agents"]) == 3
-    assert len(job["result"]["agents"][0]["signals"]) == 2
-    assert job["result"]["metrics"]["evidence_count"] == 4
+    assert len(job["result"]["agents"][0]["signals"]) == 3
+    assert job["result"]["metrics"]["evidence_count"] == 5
     assert job["result"]["recommendation"]["action"] == "monitor"
     assert job["result"]["conflicts"]
 

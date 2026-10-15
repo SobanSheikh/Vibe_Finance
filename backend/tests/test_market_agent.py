@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 from uuid import uuid4
 
+import pytest
+
 from app.analysis.contracts import (
     AgentStatus,
     AnalysisRequest,
@@ -8,9 +10,10 @@ from app.analysis.contracts import (
     InvestorProfileRef,
     RiskTolerance,
     SignalClassification,
+    SignalDimension,
 )
 from app.analysis.state import AnalysisState
-from app.market.agent import build_market_agent
+from app.market.agent import _volatility_classification, build_market_agent
 from app.market.models import MarketBar, MarketDataError
 
 
@@ -51,9 +54,12 @@ def test_market_agent_returns_cited_deterministic_signals() -> None:
     result = build_market_agent(StubProvider())(state())["market_result"]
 
     assert result.status == AgentStatus.COMPLETED
-    assert len(result.signals) == 2
-    assert result.signals[0].classification == SignalClassification.POSITIVE
-    assert result.signals[1].classification == SignalClassification.POSITIVE
+    signals = {signal.dimension: signal for signal in result.signals}
+    assert len(signals) == 3
+    assert signals[SignalDimension.PRICE_MOMENTUM].classification == SignalClassification.POSITIVE
+    assert signals[SignalDimension.VOLUME_ANOMALY].classification == SignalClassification.POSITIVE
+    assert signals[SignalDimension.PRICE_VOLATILITY].classification == SignalClassification.NEUTRAL
+    assert len(result.evidence) == 3
     assert {item.source_name for item in result.evidence} == {"Test market provider"}
     assert all(not item.is_synthetic for item in result.evidence)
 
@@ -65,3 +71,19 @@ def test_market_agent_degrades_without_uncited_output() -> None:
     assert result.signals == []
     assert result.evidence == []
     assert result.confidence == 0
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (0.199, SignalClassification.POSITIVE),
+        (0.20, SignalClassification.NEUTRAL),
+        (0.349, SignalClassification.NEUTRAL),
+        (0.35, SignalClassification.NEGATIVE),
+    ],
+)
+def test_volatility_classification_boundaries(
+    value: float,
+    expected: SignalClassification,
+) -> None:
+    assert _volatility_classification(value) == expected

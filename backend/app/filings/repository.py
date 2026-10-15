@@ -1,10 +1,14 @@
 from hashlib import sha256
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.db.models import DocumentChunk, FinancialDocument
+from app.db.models import (
+    DocumentChunk,
+    DocumentProcessingStatus,
+    FinancialDocument,
+)
 from app.filings.models import DocumentMetadata, EmbeddedChunk
 
 
@@ -33,6 +37,12 @@ def persist_document(
         published_at=metadata.published_at,
         is_synthetic=metadata.is_synthetic,
         checksum=checksum,
+        processing_status=DocumentProcessingStatus.COMPLETED,
+        page_count=max(
+            (chunk.page_number for chunk in chunks if chunk.page_number is not None),
+            default=0,
+        ),
+        chunk_count=len(chunks),
     )
     session.add(document)
     session.flush()
@@ -53,6 +63,39 @@ def persist_document(
     )
     session.commit()
     return document.id
+
+
+def persist_chunks_for_document(
+    session: Session,
+    document: FinancialDocument,
+    chunks: list[EmbeddedChunk],
+    original_content: bytes,
+    page_count: int,
+) -> None:
+    if not chunks:
+        raise ValueError("At least one document chunk is required")
+    session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
+    document.checksum = sha256(original_content).hexdigest()
+    document.page_count = page_count
+    document.chunk_count = len(chunks)
+    document.processing_status = DocumentProcessingStatus.COMPLETED
+    document.error_message = None
+    session.add_all(
+        [
+            DocumentChunk(
+                document_id=document.id,
+                company_id=document.company_id,
+                chunk_index=chunk.chunk_index,
+                content=chunk.content,
+                page_number=chunk.page_number,
+                token_count=None,
+                chunk_metadata=chunk.metadata,
+                embedding=chunk.embedding,
+            )
+            for chunk in chunks
+        ]
+    )
+    session.commit()
 
 
 def retrieve_chunks(

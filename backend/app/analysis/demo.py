@@ -41,6 +41,15 @@ def _market_agent(_: AnalysisState) -> dict[str, AgentResult]:
             source_url="demo://market/reliance/2026-10-14",
             is_synthetic=True,
         ),
+        Evidence(
+            id="demo-market-volatility",
+            kind=EvidenceKind.MARKET_OBSERVATION,
+            title="30-session annualized volatility",
+            observation="Synthetic annualized volatility from 30 daily returns is 22.0%.",
+            source_name="VibeFinance deterministic demo dataset",
+            source_url="demo://market/reliance/2026-10-14",
+            is_synthetic=True,
+        ),
     ]
     return {
         "market_result": AgentResult(
@@ -65,6 +74,13 @@ def _market_agent(_: AnalysisState) -> dict[str, AgentResult]:
                     confidence=0.74,
                     rationale="The synthetic 20-day volume z-score is +2.31.",
                     evidence_ids=[evidence[1].id],
+                ),
+                Signal(
+                    dimension=SignalDimension.PRICE_VOLATILITY,
+                    classification=SignalClassification.NEUTRAL,
+                    confidence=0.72,
+                    rationale="Synthetic 30-session annualized volatility is 22.0%.",
+                    evidence_ids=[evidence[2].id],
                 ),
             ],
             evidence=evidence,

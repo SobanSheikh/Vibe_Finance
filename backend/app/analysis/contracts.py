@@ -38,6 +38,7 @@ class AnalysisJobStatus(StrEnum):
 class SignalDimension(StrEnum):
     PRICE_MOMENTUM = "price_momentum"
     VOLUME_ANOMALY = "volume_anomaly"
+    PRICE_VOLATILITY = "price_volatility"
     FILING_SENTIMENT = "filing_sentiment"
     PORTFOLIO_FIT = "portfolio_fit"
 
@@ -67,7 +68,7 @@ class RecommendationAction(StrEnum):
 class CompanyRef(StrictModel):
     id: UUID
     symbol: str = Field(min_length=1, max_length=32)
-    exchange: str = Field(default="NSE", min_length=1, max_length=20)
+    exchange: str = Field(default="NASDAQ", min_length=1, max_length=20)
 
 
 class InvestorProfileRef(StrictModel):
@@ -158,9 +159,7 @@ class Recommendation(StrictModel):
     supporting_evidence_ids: list[str] = Field(default_factory=list)
     opposing_evidence_ids: list[str] = Field(default_factory=list)
     personalized_risks: list[str] = Field(default_factory=list)
-    disclaimer: str = (
-        "Decision support only. VibeFinance does not provide financial advice."
-    )
+    disclaimer: str = "Decision support only. VibeFinance does not provide financial advice."
 
 
 class AnalysisResponse(StrictModel):

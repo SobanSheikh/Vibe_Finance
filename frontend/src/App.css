@@ -358,7 +358,8 @@ h1 {
 .agent-card,
 .citation-card,
 .conflict-card,
-.portfolio-card {
+.portfolio-card,
+.filing-upload-card {
   border: 1px solid var(--line);
   background: var(--surface);
 }
@@ -366,6 +367,180 @@ h1 {
 .portfolio-card {
   padding: 16px;
   border-radius: 10px;
+}
+
+.filing-upload-card {
+  padding: 16px;
+  border-radius: 10px;
+}
+
+.filing-dropzone {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.filing-dropzone span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filing-dropzone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.filing-metadata {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.filing-metadata__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.filing-metadata label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.filing-metadata label > span {
+  color: var(--muted);
+  font-family: "Geist Mono", monospace;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.filing-metadata input,
+.filing-metadata select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: 0;
+  color: var(--text);
+  background: var(--surface-raised);
+  font: inherit;
+  font-size: 8px;
+}
+
+.filing-metadata input:focus,
+.filing-metadata select:focus {
+  border-color: var(--accent-muted);
+}
+
+.filing-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.filing-actions .button {
+  width: 100%;
+}
+
+.sec-sync-status {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-family: "Geist Mono", monospace;
+  font-size: 7px;
+  text-transform: uppercase;
+}
+
+.sec-sync-status--completed {
+  color: var(--positive);
+}
+
+.sec-sync-status--partial,
+.sec-sync-status--failed {
+  color: var(--negative);
+}
+
+.upload-progress {
+  height: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line-soft);
+}
+
+.upload-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 160ms ease;
+}
+
+.filing-document-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.filing-document {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.filing-document > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.filing-document strong,
+.filing-document span,
+.filing-document small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filing-document strong {
+  font-size: 9px;
+}
+
+.filing-document span {
+  color: var(--info);
+  font-family: "Geist Mono", monospace;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.filing-document small {
+  color: var(--negative);
+  font-size: 8px;
+}
+
+.filing-document button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 8px;
 }
 
 .portfolio-list {

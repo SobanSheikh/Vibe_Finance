@@ -3,6 +3,7 @@ import {
   BriefcaseBusiness,
   Building2,
   FileSearch,
+  FileText,
   LayoutDashboard,
   Search,
   ShieldAlert,
@@ -10,6 +11,8 @@ import {
   TrendingUp,
   UserRound,
   Waves,
+  Upload,
+  RefreshCw,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
@@ -28,6 +31,14 @@ import {
   type InvestorProfile,
   type RiskTolerance,
 } from './api/catalog'
+import {
+  getFilingDocuments,
+  retryFilingDocument,
+  syncSecFilings,
+  uploadFiling,
+  type FilingDocument,
+  type SecSyncJob,
+} from './api/filings'
 import { AgentCard } from './components/AgentCard'
 import { Button } from './components/Button'
 import { CitationCard } from './components/CitationCard'
@@ -60,6 +71,7 @@ const agentPresentation = {
 const signalPresentation = {
   price_momentum: { label: 'Price momentum', icon: TrendingUp },
   volume_anomaly: { label: 'Volume anomaly', icon: Waves },
+  price_volatility: { label: 'Volatility risk', icon: Activity },
   filing_sentiment: { label: 'Filing sentiment', icon: FileSearch },
   portfolio_fit: { label: 'Portfolio fit', icon: ShieldAlert },
 } as const
@@ -71,7 +83,17 @@ function signalTone(classification: Signal['classification']): SignalTone {
   return 'info'
 }
 
-function signalValue(classification: Signal['classification']): string {
+function signalValue(signal: Signal): string {
+  if (signal.dimension === 'price_volatility') {
+    const volatilityLabels: Record<Signal['classification'], string> = {
+      positive: 'Low risk',
+      neutral: 'Moderate',
+      negative: 'High risk',
+      mixed: 'Mixed',
+      insufficient_data: 'Unavailable',
+    }
+    return volatilityLabels[signal.classification]
+  }
   const labels: Record<Signal['classification'], string> = {
     positive: 'Positive',
     neutral: 'Neutral',
@@ -79,7 +101,7 @@ function signalValue(classification: Signal['classification']): string {
     mixed: 'Mixed',
     insufficient_data: 'Unavailable',
   }
-  return labels[classification]
+  return labels[signal.classification]
 }
 
 function App() {
@@ -90,8 +112,28 @@ function App() {
   const [selectedCompanyId, setSelectedCompanyId] = useState('')
   const [selectedProfileId, setSelectedProfileId] = useState('')
   const [holdings, setHoldings] = useState<Holding[]>([])
+  const [filingDocuments, setFilingDocuments] = useState<FilingDocument[]>([])
+  const [filingFile, setFilingFile] = useState<File | null>(null)
+  const [filingTitle, setFilingTitle] = useState('')
+  const [filingDocumentType, setFilingDocumentType] = useState('annual_report')
+  const [filingReportingPeriod, setFilingReportingPeriod] = useState('')
+  const [filingPublishedAt, setFilingPublishedAt] = useState('')
+  const [filingSourceName, setFilingSourceName] = useState('Company investor relations')
+  const [filingSourceUrl, setFilingSourceUrl] = useState('')
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [uploadInputKey, setUploadInputKey] = useState(0)
+  const [secSyncJob, setSecSyncJob] = useState<SecSyncJob | null>(null)
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const activeFilingIds = filingDocuments
+    .filter(
+      (document) => document.processing_status === 'pending' ||
+        document.processing_status === 'processing',
+    )
+    .map((document) => document.id)
+    .sort()
+    .join(',')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -107,7 +149,7 @@ function App() {
         setCompanies(companyRows)
         setProfiles(profileRows)
         setSelectedCompanyId(
-          companyRows.find((company) => company.symbol === 'RELIANCE')?.id ??
+          companyRows.find((company) => company.symbol === 'GOOGL')?.id ??
             companyRows[0]?.id ??
             '',
         )
@@ -133,8 +175,56 @@ function App() {
       .catch(() => setError('Could not load portfolio holdings for this profile.'))
   }, [selectedProfileId])
 
+  useEffect(() => {
+    if (!selectedCompanyId) return
+    let cancelled = false
+    getFilingDocuments(selectedCompanyId)
+      .then((documents) => {
+        if (!cancelled) setFilingDocuments(documents)
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not load indexed filings for this company.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCompanyId])
+
+  useEffect(() => {
+    if (!selectedCompanyId || !activeFilingIds) return
+
+    let cancelled = false
+    let timer: number | undefined
+
+    const pollDocuments = async () => {
+      try {
+        const documents = await getFilingDocuments(selectedCompanyId)
+        if (cancelled) return
+        setFilingDocuments(documents)
+        const stillProcessing = documents.some(
+          (document) => document.processing_status === 'pending' ||
+            document.processing_status === 'processing',
+        )
+        if (stillProcessing) {
+          timer = window.setTimeout(pollDocuments, 4000)
+        }
+      } catch {
+        if (!cancelled) timer = window.setTimeout(pollDocuments, 8000)
+      }
+    }
+
+    timer = window.setTimeout(pollDocuments, 4000)
+    return () => {
+      cancelled = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [activeFilingIds, selectedCompanyId])
+
   const selectedCompany = companies.find((company) => company.id === selectedCompanyId)
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId)
+  const hasReadyFiling = filingDocuments.some(
+    (document) => document.processing_status === 'completed',
+  )
 
   const signals = useMemo(
     () => analysis?.agents.flatMap((agent) => agent.signals) ?? [],
@@ -169,6 +259,84 @@ function App() {
       setRunStatus('error')
     }
   }
+
+  const uploadSelectedFiling = async () => {
+    if (!selectedCompany || !filingFile) return
+    setUploadProgress(0)
+    setError(null)
+    try {
+      const document = await uploadFiling(
+        selectedCompany,
+        filingFile,
+        {
+          title: filingTitle,
+          documentType: filingDocumentType,
+          reportingPeriod: filingReportingPeriod,
+          publishedAt: filingPublishedAt,
+          sourceName: filingSourceName,
+          sourceUrl: filingSourceUrl,
+        },
+        setUploadProgress,
+      )
+      setFilingDocuments((current) => [
+        document,
+        ...current.filter((item) => item.id !== document.id),
+      ])
+      setFilingFile(null)
+      setFilingTitle('')
+      setFilingReportingPeriod('')
+      setFilingPublishedAt('')
+      setFilingSourceUrl('')
+      setUploadInputKey((current) => current + 1)
+      setUploadProgress(null)
+    } catch (reason) {
+      setUploadProgress(null)
+      setError(reason instanceof Error ? reason.message : 'Filing upload failed.')
+    }
+  }
+
+  const retryFiling = async (documentId: string) => {
+    setError(null)
+    try {
+      const document = await retryFilingDocument(documentId)
+      setFilingDocuments((current) => current.map(
+        (item) => item.id === document.id ? document : item,
+      ))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not retry the filing.')
+    }
+  }
+
+  const syncSelectedCompanyFilings = async () => {
+    if (!selectedCompany) return
+    setError(null)
+    setSecSyncJob({
+      job_id: '',
+      status: 'pending',
+      discovered_count: 0,
+      completed_count: 0,
+      skipped_count: 0,
+      failed_count: 0,
+      document_ids: [],
+      error: null,
+    })
+    try {
+      const job = await syncSecFilings(selectedCompany.id, setSecSyncJob)
+      setFilingDocuments(await getFilingDocuments(selectedCompany.id))
+      if (job.status === 'failed') {
+        setError(job.error ?? 'SEC filing sync failed.')
+      }
+    } catch (reason) {
+      setSecSyncJob(null)
+      setError(reason instanceof Error ? reason.message : 'SEC filing sync failed.')
+    }
+  }
+
+  const secSyncRunning = secSyncJob !== null && [
+    'pending',
+    'discovering',
+    'processing',
+  ].includes(secSyncJob.status)
 
   return (
     <div className="app-shell">
@@ -212,6 +380,7 @@ function App() {
               <Building2 aria-hidden="true" size={15} />
               <select
                 onChange={(event) => {
+                  setFilingDocuments([])
                   setSelectedCompanyId(event.target.value)
                   resetAnalysis()
                 }}
@@ -292,7 +461,7 @@ function App() {
                       key={signal.dimension}
                       label={presentation.label}
                       tone={signalTone(signal.classification)}
-                      value={signalValue(signal.classification)}
+                      value={signalValue(signal)}
                     />
                   )
                 }) : <p className="empty-state">Signals will appear after the workflow completes.</p>}
@@ -328,6 +497,166 @@ function App() {
           </div>
 
           <aside className="evidence-column">
+            <section className="filing-upload-card">
+              <header className="section-heading">
+                <h2>Company filings</h2>
+                <span className={hasReadyFiling ? 'positive-text' : ''}>
+                  {hasReadyFiling ? 'Evidence ready' : 'Upload PDF'}
+                </span>
+              </header>
+              <label className="filing-dropzone">
+                <Upload aria-hidden="true" size={18} />
+                <span>{filingFile?.name ?? 'Choose an annual report or filing'}</span>
+                <input
+                  accept="application/pdf,.pdf"
+                  disabled={uploadProgress !== null}
+                  key={uploadInputKey}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null
+                    setFilingFile(file)
+                    if (file && !filingTitle) {
+                      setFilingTitle(file.name.replace(/\.pdf$/i, '').replaceAll('-', ' '))
+                    }
+                  }}
+                  type="file"
+                />
+              </label>
+              <div className="filing-metadata">
+                <label>
+                  <span>Document title</span>
+                  <input
+                    disabled={uploadProgress !== null}
+                    onChange={(event) => setFilingTitle(event.target.value)}
+                    placeholder="Alphabet 2024 Annual Report"
+                    required
+                    type="text"
+                    value={filingTitle}
+                  />
+                </label>
+                <div className="filing-metadata__row">
+                  <label>
+                    <span>Document type</span>
+                    <select
+                      disabled={uploadProgress !== null}
+                      onChange={(event) => setFilingDocumentType(event.target.value)}
+                      value={filingDocumentType}
+                    >
+                      <option value="annual_report">Annual report</option>
+                      <option value="quarterly_report">Quarterly report</option>
+                      <option value="earnings_release">Earnings release</option>
+                      <option value="investor_presentation">Investor presentation</option>
+                      <option value="regulatory_filing">Regulatory filing</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Reporting period</span>
+                    <input
+                      disabled={uploadProgress !== null}
+                      onChange={(event) => setFilingReportingPeriod(event.target.value)}
+                      placeholder="FY 2024"
+                      required
+                      type="text"
+                      value={filingReportingPeriod}
+                    />
+                  </label>
+                </div>
+                <div className="filing-metadata__row">
+                  <label>
+                    <span>Source name</span>
+                    <input
+                      disabled={uploadProgress !== null}
+                      onChange={(event) => setFilingSourceName(event.target.value)}
+                      required
+                      type="text"
+                      value={filingSourceName}
+                    />
+                  </label>
+                  <label>
+                    <span>Published</span>
+                    <input
+                      disabled={uploadProgress !== null}
+                      onChange={(event) => setFilingPublishedAt(event.target.value)}
+                      type="date"
+                      value={filingPublishedAt}
+                    />
+                  </label>
+                </div>
+                <label>
+                  <span>Official source URL</span>
+                  <input
+                    disabled={uploadProgress !== null}
+                    onChange={(event) => setFilingSourceUrl(event.target.value)}
+                    placeholder="https://www.sec.gov/Archives/..."
+                    required
+                    type="url"
+                    value={filingSourceUrl}
+                  />
+                </label>
+              </div>
+              {uploadProgress !== null && (
+                <div className="upload-progress" aria-label={`Upload ${uploadProgress}%`}>
+                  <span style={{ width: `${uploadProgress}%` }} />
+                </div>
+              )}
+              <div className="filing-actions">
+                <Button
+                  disabled={
+                    !filingFile ||
+                    !filingTitle.trim() ||
+                    !filingReportingPeriod.trim() ||
+                    !filingSourceName.trim() ||
+                    !filingSourceUrl.startsWith('https://') ||
+                    uploadProgress !== null ||
+                    secSyncRunning ||
+                    !selectedCompany
+                  }
+                  icon={<Upload aria-hidden="true" size={15} />}
+                  onClick={uploadSelectedFiling}
+                >
+                  {uploadProgress !== null ? `Uploading ${uploadProgress}%` : 'Upload filing'}
+                </Button>
+                <Button
+                  disabled={!selectedCompany || secSyncRunning || uploadProgress !== null}
+                  icon={<RefreshCw aria-hidden="true" size={15} />}
+                  onClick={syncSelectedCompanyFilings}
+                >
+                  {secSyncRunning ? 'Syncing SEC…' : 'Sync SEC'}
+                </Button>
+              </div>
+              {secSyncJob && (
+                <p className={`sec-sync-status sec-sync-status--${secSyncJob.status}`}>
+                  {secSyncRunning
+                    ? `${secSyncJob.status} · ${secSyncJob.discovered_count} discovered`
+                    : `${secSyncJob.completed_count} indexed · ${secSyncJob.skipped_count} already current · ${secSyncJob.failed_count} failed`}
+                </p>
+              )}
+              <div className="filing-document-list">
+                {filingDocuments.map((document) => (
+                  <div className="filing-document" key={document.id}>
+                    <FileText aria-hidden="true" size={16} />
+                    <div>
+                      <strong>{document.title}</strong>
+                      <span>
+                        {document.processing_status === 'completed'
+                          ? [
+                              document.document_type.replaceAll('_', ' '),
+                              document.reporting_period,
+                              `${document.chunk_count ?? 0} indexed chunks`,
+                            ].filter(Boolean).join(' · ')
+                          : document.processing_status}
+                      </span>
+                      {document.error_message && <small>{document.error_message}</small>}
+                    </div>
+                    {document.processing_status === 'failed' && (
+                      <button onClick={() => retryFiling(document.id)} type="button">
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+
             <section className="portfolio-card">
               <header className="section-heading">
                 <h2>Portfolio snapshot</h2>
@@ -381,7 +710,7 @@ function App() {
                     <span>{signalPresentation[signal.dimension].label}</span>
                     <strong className={`tone-${signalTone(signal.classification)}`}>
                       <span className="conflict-row__dot" />
-                      {signalValue(signal.classification)}
+                      {signalValue(signal)}
                     </strong>
                   </div>
                 )) : <p className="empty-state">No evidence has been compared yet.</p>}

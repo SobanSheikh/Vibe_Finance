@@ -35,7 +35,7 @@ class YahooFinanceProvider:
 
     @staticmethod
     def _ticker(symbol: str, exchange: str) -> str:
-        suffixes = {"NSE": ".NS", "BSE": ".BO"}
+        suffixes = {"NSE": ".NS", "BSE": ".BO", "NASDAQ": "", "NYSE": ""}
         normalized_symbol = symbol.strip().upper()
         normalized_exchange = exchange.strip().upper()
         if not normalized_symbol:
@@ -43,7 +43,7 @@ class YahooFinanceProvider:
         suffix = suffixes.get(normalized_exchange)
         if suffix is None:
             raise MarketDataError(f"Unsupported exchange: {normalized_exchange}")
-        if normalized_symbol.endswith(suffix):
+        if not suffix or normalized_symbol.endswith(suffix):
             return normalized_symbol
         return normalized_symbol + suffix
 

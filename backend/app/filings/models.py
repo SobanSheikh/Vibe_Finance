@@ -5,7 +5,7 @@ from uuid import UUID
 
 @dataclass(frozen=True)
 class ExtractedPage:
-    page_number: int
+    page_number: int | None
     content: str
 
 
@@ -13,7 +13,7 @@ class ExtractedPage:
 class EmbeddedChunk:
     chunk_index: int
     content: str
-    page_number: int
+    page_number: int | None
     embedding: list[float]
     metadata: dict[str, object] = field(default_factory=dict)
 
@@ -23,7 +23,7 @@ class DocumentMetadata:
     company_id: UUID
     title: str
     document_type: str
-    source_url: str
+    source_url: str | None
     source_name: str
     reporting_period: str | None = None
     published_at: date | None = None
@@ -44,7 +44,7 @@ class RetrievedChunk:
     document_title: str
     content: str
     source_name: str
-    source_url: str
+    source_url: str | None
     page_number: int | None
     published_at: date | None
     similarity: float

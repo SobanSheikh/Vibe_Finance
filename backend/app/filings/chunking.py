@@ -15,7 +15,7 @@ class SemanticFinancialChunker:
         )
 
     def chunk_and_embed(self, pages: list[ExtractedPage]) -> list[EmbeddedChunk]:
-        chunk_inputs: list[tuple[int, str]] = []
+        chunk_inputs: list[tuple[int | None, str]] = []
         for page in pages:
             chunks = self._splitter.split_text(page.content)
             chunk_inputs.extend(

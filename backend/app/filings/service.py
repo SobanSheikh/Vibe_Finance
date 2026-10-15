@@ -4,11 +4,16 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.db.models import FinancialDocument
 from app.filings.chunking import SemanticFinancialChunker
 from app.filings.embedding import FastEmbedEmbeddings
-from app.filings.extraction import extract_pdf_pages
+from app.filings.extraction import extract_html_sections, extract_pdf_pages
 from app.filings.models import DocumentMetadata, IngestionResult, RetrievedChunk
-from app.filings.repository import persist_document, retrieve_chunks
+from app.filings.repository import (
+    persist_chunks_for_document,
+    persist_document,
+    retrieve_chunks,
+)
 
 
 class FilingIngestionService:
@@ -27,6 +32,32 @@ class FilingIngestionService:
         document_id = persist_document(session, metadata, chunks, content)
         return IngestionResult(
             document_id=document_id,
+            page_count=len(pages),
+            chunk_count=len(chunks),
+        )
+
+    def process_existing_document(
+        self,
+        session: Session,
+        document: FinancialDocument,
+        content: bytes,
+    ) -> IngestionResult:
+        if document.mime_type == "application/pdf":
+            pages = extract_pdf_pages(content)
+        elif document.mime_type in {"text/html", "application/xhtml+xml"}:
+            pages = extract_html_sections(content)
+        else:
+            raise ValueError(f"Unsupported filing MIME type: {document.mime_type or 'unknown'}")
+        chunks = self.chunker.chunk_and_embed(pages)
+        persist_chunks_for_document(
+            session,
+            document,
+            chunks,
+            content,
+            page_count=len(pages),
+        )
+        return IngestionResult(
+            document_id=document.id,
             page_count=len(pages),
             chunk_count=len(chunks),
         )

@@ -41,12 +41,12 @@ def list_companies(
     query: str | None = Query(default=None, alias="q", max_length=100),
     session: Session = Depends(get_db),
 ) -> list[Company]:
-    statement = select(Company).order_by(Company.symbol).limit(50)
+    statement = (
+        select(Company).where(Company.is_active.is_(True)).order_by(Company.symbol).limit(50)
+    )
     if query:
         pattern = f"%{query.strip()}%"
-        statement = statement.where(
-            or_(Company.symbol.ilike(pattern), Company.name.ilike(pattern))
-        )
+        statement = statement.where(or_(Company.symbol.ilike(pattern), Company.name.ilike(pattern)))
     return list(session.scalars(statement))
 
 
@@ -146,9 +146,7 @@ def create_holding(
     )
 
 
-@router.patch(
-    "/profiles/{profile_id}/holdings/{holding_id}", response_model=HoldingResponse
-)
+@router.patch("/profiles/{profile_id}/holdings/{holding_id}", response_model=HoldingResponse)
 def update_holding(
     profile_id: UUID,
     holding_id: UUID,
@@ -195,9 +193,7 @@ def delete_holding(
 
 
 @router.get("/profiles/{profile_id}/watchlist", response_model=list[WatchlistResponse])
-def list_watchlist(
-    profile_id: UUID, session: Session = Depends(get_db)
-) -> list[WatchlistResponse]:
+def list_watchlist(profile_id: UUID, session: Session = Depends(get_db)) -> list[WatchlistResponse]:
     _profile_or_404(session, profile_id)
     rows = session.execute(
         select(WatchlistItem, Company)
@@ -242,9 +238,7 @@ def create_watchlist_item(
     )
 
 
-@router.delete(
-    "/profiles/{profile_id}/watchlist/{item_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/profiles/{profile_id}/watchlist/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_watchlist_item(
     profile_id: UUID,
     item_id: UUID,

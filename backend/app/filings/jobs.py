@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from copy import deepcopy
 from threading import Lock
 from uuid import UUID, uuid4
@@ -6,7 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from app.config import get_settings
-from app.db.models import Company
+from app.db.models import Company, DocumentProcessingStatus, FinancialDocument
 from app.db.session import get_session_factory
 from app.filings.contracts import (
     FilingIngestionAccepted,
@@ -17,6 +18,9 @@ from app.filings.contracts import (
 from app.filings.downloader import FilingDownloader
 from app.filings.models import DocumentMetadata
 from app.filings.service import FilingIngestionService
+from app.filings.storage import SupabaseFilingStorage
+
+logger = logging.getLogger(__name__)
 
 
 class IngestionJobNotFoundError(LookupError):
@@ -101,3 +105,47 @@ class FilingIngestionJobs:
 
 
 filing_ingestion_jobs = FilingIngestionJobs()
+
+
+def process_uploaded_filing(document_id: UUID) -> None:
+    """Process a durable uploaded object after the HTTP response has returned."""
+    settings = get_settings()
+    key = settings.supabase_backend_key
+    if not settings.supabase_url or not key:
+        _mark_upload_failed(document_id, "Supabase filing storage is not configured")
+        return
+    storage = SupabaseFilingStorage(
+        settings.supabase_url,
+        key,
+        settings.filing_storage_bucket,
+    )
+    session_factory = get_session_factory()
+    try:
+        with session_factory() as session:
+            document = session.get(FinancialDocument, document_id)
+            if document is None or not document.storage_path:
+                raise ValueError("Uploaded filing record is unavailable")
+            document.processing_status = DocumentProcessingStatus.PROCESSING
+            document.error_message = None
+            session.commit()
+            content = storage.download(
+                document.storage_path,
+                settings.filing_max_download_mb * 1024 * 1024,
+            )
+            FilingIngestionService().process_existing_document(session, document, content)
+    except Exception:
+        logger.exception("Uploaded filing processing failed for %s", document_id)
+        _mark_upload_failed(
+            document_id,
+            "Filing processing failed. Retry after reviewing the source document.",
+        )
+
+
+def _mark_upload_failed(document_id: UUID, message: str) -> None:
+    with get_session_factory()() as session:
+        document = session.get(FinancialDocument, document_id)
+        if document is None:
+            return
+        document.processing_status = DocumentProcessingStatus.FAILED
+        document.error_message = message[:500]
+        session.commit()

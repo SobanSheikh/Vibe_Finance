@@ -3,7 +3,12 @@ import type { Company, InvestorProfile } from './catalog'
 export type SignalTone = 'positive' | 'warning' | 'negative' | 'info'
 
 export interface Signal {
-  dimension: 'price_momentum' | 'volume_anomaly' | 'filing_sentiment' | 'portfolio_fit'
+  dimension:
+    | 'price_momentum'
+    | 'volume_anomaly'
+    | 'price_volatility'
+    | 'filing_sentiment'
+    | 'portfolio_fit'
   classification: 'positive' | 'neutral' | 'negative' | 'mixed' | 'insufficient_data'
   confidence: number
   rationale: string
@@ -69,6 +74,12 @@ const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds))
 
+const analysisPollDelay = (attempt: number) => {
+  if (attempt < 2) return 500
+  if (attempt < 5) return 1000
+  return 2000
+}
+
 export async function runAnalysis(
   company: Company,
   investorProfile: InvestorProfile,
@@ -94,7 +105,8 @@ export async function runAnalysis(
   if (!createResponse.ok) throw new Error('Could not start the analysis workflow.')
   const accepted = (await createResponse.json()) as { session_id: string }
 
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    await wait(analysisPollDelay(attempt))
     const jobResponse = await fetch(`${apiUrl}/api/analysis/${accepted.session_id}`)
     if (!jobResponse.ok) throw new Error('Could not retrieve the analysis result.')
     const job = (await jobResponse.json()) as AnalysisJob
@@ -103,7 +115,6 @@ export async function runAnalysis(
       return job.result
     }
     if (job.status === 'failed') throw new Error(job.error ?? 'The analysis workflow failed.')
-    await wait(300)
   }
 
   throw new Error('The analysis did not complete within the expected time.')
