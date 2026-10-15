@@ -5,7 +5,7 @@ from typing import Protocol
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.analysis.contracts import (
     AgentStatus,
@@ -23,10 +23,28 @@ class RecommendationDraft(BaseModel):
     action: RecommendationAction
     confidence: float = Field(ge=0, le=1)
     summary: str = Field(min_length=1, max_length=500)
-    rationale: list[str] = Field(min_length=1, max_length=5)
-    supporting_evidence_ids: list[str] = Field(default_factory=list, max_length=8)
-    opposing_evidence_ids: list[str] = Field(default_factory=list, max_length=8)
-    personalized_risks: list[str] = Field(default_factory=list, max_length=4)
+    rationale: list[str] = Field(min_length=1)
+    supporting_evidence_ids: list[str] = Field(default_factory=list)
+    opposing_evidence_ids: list[str] = Field(default_factory=list)
+    personalized_risks: list[str] = Field(default_factory=list)
+
+    @field_validator("rationale")
+    @classmethod
+    def clean_rationale(cls, items: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(item.strip() for item in items if item.strip()))[:5]
+        if not cleaned:
+            raise ValueError("a recommendation must contain at least one rationale")
+        return cleaned
+
+    @field_validator("supporting_evidence_ids", "opposing_evidence_ids")
+    @classmethod
+    def clean_evidence_ids(cls, items: list[str]) -> list[str]:
+        return list(dict.fromkeys(item.strip() for item in items if item.strip()))[:8]
+
+    @field_validator("personalized_risks")
+    @classmethod
+    def clean_personalized_risks(cls, items: list[str]) -> list[str]:
+        return list(dict.fromkeys(item.strip() for item in items if item.strip()))[:4]
 
     @model_validator(mode="after")
     def validate_lists(self) -> "RecommendationDraft":
@@ -83,7 +101,9 @@ class LlmRecommendationComposer:
                         "change the recommendation when relevant. Prefer "
                         "insufficient_evidence when "
                         "the specialists cannot support a responsible conclusion. This is decision "
-                        "support, not financial advice."
+                        "support, not financial advice. Return 1 to 5 non-empty rationale points, "
+                        "at most 4 personalized risks, and at most 8 IDs in each evidence list. "
+                        "Never include blank list entries."
                     )
                 ),
                 HumanMessage(

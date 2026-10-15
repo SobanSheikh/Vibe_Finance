@@ -116,6 +116,21 @@ def test_synthesis_keeps_citations_and_calibrates_confidence() -> None:
     assert result.disclaimer.startswith("Decision support only")
 
 
+def test_draft_cleans_and_limits_provider_generated_lists() -> None:
+    draft = RecommendationDraft(
+        action=RecommendationAction.REDUCE,
+        confidence=0.8,
+        summary="Reduce exposure because concentration exceeds the profile limits.",
+        rationale=["One", "Two", "Three", "Four", "Five", ""],
+        supporting_evidence_ids=["portfolio-1"] * 9,
+        personalized_risks=["One", "Two", "Three", "Four", "Five"],
+    )
+
+    assert draft.rationale == ["One", "Two", "Three", "Four", "Five"]
+    assert draft.supporting_evidence_ids == ["portfolio-1"]
+    assert draft.personalized_risks == ["One", "Two", "Three", "Four"]
+
+
 def test_synthesis_rejects_hallucinated_evidence_id() -> None:
     draft = RecommendationDraft(
         action=RecommendationAction.HOLD,

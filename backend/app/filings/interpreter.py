@@ -16,17 +16,27 @@ class FilingInterpretation(BaseModel):
     confidence: float = Field(ge=0, le=1)
     summary: str = Field(min_length=1, max_length=500)
     rationale: str = Field(min_length=1, max_length=1_200)
-    strengths: list[str] = Field(default_factory=list, max_length=3)
-    risks: list[str] = Field(default_factory=list, max_length=3)
+    strengths: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
     outlook: str = Field(min_length=1, max_length=500)
-    evidence_ids: list[str] = Field(min_length=1, max_length=6)
+    evidence_ids: list[str] = Field(min_length=1)
 
     @field_validator("strengths", "risks")
     @classmethod
     def validate_findings(cls, findings: list[str]) -> list[str]:
-        cleaned = [item.strip() for item in findings if item.strip()]
+        cleaned = list(dict.fromkeys(item.strip() for item in findings if item.strip()))[:3]
         if any(len(item) > 300 for item in cleaned):
             raise ValueError("findings must not exceed 300 characters")
+        return cleaned
+
+    @field_validator("evidence_ids")
+    @classmethod
+    def validate_evidence_ids(cls, evidence_ids: list[str]) -> list[str]:
+        cleaned = list(
+            dict.fromkeys(item.strip() for item in evidence_ids if item.strip())
+        )[:6]
+        if not cleaned:
+            raise ValueError("at least one evidence ID is required")
         return cleaned
 
 
@@ -71,7 +81,9 @@ class LlmFilingInterpreter:
                         "as positive, neutral, negative, or mixed. Every claim in the summary and "
                         "rationale must be supported by at least one supplied evidence ID. If "
                         "strengths and risks coexist, prefer mixed. Personalize emphasis for the "
-                        "investor's risk tolerance and horizon without giving financial advice."
+                        "investor's risk tolerance and horizon without giving financial advice. "
+                        "Return at most 3 non-empty strengths, 3 non-empty risks, and 6 evidence "
+                        "IDs. Never include blank list entries."
                     )
                 ),
                 HumanMessage(

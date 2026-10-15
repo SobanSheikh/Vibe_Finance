@@ -73,6 +73,23 @@ def test_interpreter_accepts_only_retrieved_evidence_ids() -> None:
     assert result.evidence_ids == ["filing-evidence-1"]
 
 
+def test_interpretation_cleans_and_limits_provider_generated_lists() -> None:
+    response = FilingInterpretation(
+        classification="mixed",
+        confidence=0.8,
+        summary="The filing contains strengths and risks.",
+        rationale="Retrieved excerpts support a mixed classification.",
+        strengths=["One", "Two", "Three", "Four", ""],
+        risks=["One", "Two", "Three", "Four"],
+        outlook="Monitor the reported risks.",
+        evidence_ids=["one", "two", "three", "four", "five", "six", "seven", ""],
+    )
+
+    assert response.strengths == ["One", "Two", "Three"]
+    assert response.risks == ["One", "Two", "Three"]
+    assert response.evidence_ids == ["one", "two", "three", "four", "five", "six"]
+
+
 def test_interpreter_rejects_hallucinated_evidence_id() -> None:
     response = FilingInterpretation(
         classification="positive",
