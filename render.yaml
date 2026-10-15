@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: vibefinance-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_ENVIRONMENT
+        value: production
+      - key: MARKET_DATA_MODE
+        value: live
+      - key: FASTEMBED_CACHE_PATH
+        value: /opt/fastembed-cache
+      - key: FILING_STORAGE_BUCKET
+        value: financial-filings
+      - key: FILING_MAX_DOWNLOAD_MB
+        value: "25"
+      - key: FRONTEND_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SEC_USER_AGENT
+        sync: false
+      - key: LLM_PROVIDER
+        value: anthropic
+      - key: LLM_MODEL
+        value: claude-sonnet-5
+      - key: LLM_BASE_URL
+        value: https://api.anthropic.com
+      - key: LLM_API_KEY
+        sync: false

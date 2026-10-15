@@ -55,3 +55,12 @@ real contact email. Apply migrations with `npx supabase db push` before starting
 FastAPI.
 
 See the architecture and evaluation documents before running the judging demo.
+
+## Deployment
+
+The deployment-ready configuration uses Vercel for the frontend, a Dockerized
+Render service for FastAPI and local embedding inference, and Supabase for
+PostgreSQL, pgvector, and private filing storage.
+
+See [deployment instructions](docs/deployment.md) for environment variables,
+model hosting, and the production smoke-test checklist.
