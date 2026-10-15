@@ -111,6 +111,7 @@ export interface AnalysisHistoryItem {
 }
 
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const analysisTimeoutMs = 180_000
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds))
@@ -156,7 +157,9 @@ export async function runAnalysis(
     completed_nodes: [],
   })
 
-  for (let attempt = 0; attempt < 24; attempt += 1) {
+  const deadline = Date.now() + analysisTimeoutMs
+  let attempt = 0
+  while (Date.now() < deadline) {
     await wait(analysisPollDelay(attempt))
     const jobResponse = await fetch(`${apiUrl}/api/analysis/${accepted.session_id}`)
     if (!jobResponse.ok) throw new Error('Could not retrieve the analysis result.')
@@ -167,9 +170,12 @@ export async function runAnalysis(
       return job.result
     }
     if (job.status === 'failed') throw new Error(job.error ?? 'The analysis workflow failed.')
+    attempt += 1
   }
 
-  throw new Error('The analysis did not complete within the expected time.')
+  throw new Error(
+    'The analysis is still processing. Its completed result will remain available in Research history.',
+  )
 }
 
 export async function getAnalysisHistory(filters: {
