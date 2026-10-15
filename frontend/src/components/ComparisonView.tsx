@@ -157,8 +157,11 @@ export function ComparisonView({
   const currentResults = results?.companyId === company?.id ? results : null
   const leftMarketFingerprint = currentResults ? marketFingerprint(currentResults.left) : null
   const rightMarketFingerprint = currentResults ? marketFingerprint(currentResults.right) : null
-  const sameMarketEvidence = leftMarketFingerprint !== null &&
-    leftMarketFingerprint === rightMarketFingerprint
+  const marketEvidenceState = leftMarketFingerprint === null || rightMarketFingerprint === null
+    ? 'unavailable'
+    : leftMarketFingerprint === rightMarketFingerprint
+      ? 'matching'
+      : 'changed'
   const personalized = currentResults
     ? currentResults.left.recommendation.action !== currentResults.right.recommendation.action ||
       currentResults.left.metrics.portfolio_concentration_score !==
@@ -252,20 +255,26 @@ export function ComparisonView({
 
       {currentResults && leftProfile && rightProfile && (
         <>
-          <section className={`comparison-proof comparison-proof--${sameMarketEvidence && personalized ? 'success' : 'warning'}`}>
-            {sameMarketEvidence && personalized
+          <section className={`comparison-proof comparison-proof--${marketEvidenceState === 'matching' && personalized ? 'success' : 'warning'}`}>
+            {marketEvidenceState === 'matching' && personalized
               ? <CheckCircle2 aria-hidden="true" size={18} />
               : <TriangleAlert aria-hidden="true" size={18} />}
             <div>
               <strong>
-                {sameMarketEvidence
-                  ? 'Matching market evidence confirmed'
-                  : 'Market observations changed between workflows'}
+                {marketEvidenceState === 'unavailable'
+                  ? 'Market evidence was unavailable for this comparison'
+                  : marketEvidenceState === 'matching'
+                    ? 'Matching market evidence confirmed'
+                    : 'Market observations changed between workflows'}
               </strong>
               <span>
-                {personalized
-                  ? 'The recommendation or portfolio outcome changed because the investor context changed.'
-                  : 'These profiles produced the same decision for this company; their risk metrics remain visible below.'}
+                {marketEvidenceState === 'unavailable'
+                  ? 'Portfolio and filing-grounded outcomes remain comparable, but identical market evidence could not be verified.'
+                  : marketEvidenceState === 'changed'
+                    ? 'Outcome differences cannot be attributed only to investor context; rerun when both workflows use matching market observations.'
+                    : personalized
+                      ? 'The recommendation or portfolio outcome changed because the investor context changed.'
+                      : 'These profiles produced the same decision for this company; their risk metrics remain visible below.'}
               </span>
             </div>
           </section>
