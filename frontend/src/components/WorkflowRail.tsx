@@ -11,7 +11,12 @@ import {
   UsersRound,
   type LucideIcon,
 } from 'lucide-react'
-import type { AnalysisResult } from '../api/analysis'
+import type {
+  AnalysisProgress,
+  AnalysisProgressPhase,
+  AnalysisProgressState,
+  AnalysisResult,
+} from '../api/analysis'
 
 type RunStatus = 'idle' | 'running' | 'complete' | 'error'
 type StageState = 'ready' | 'active' | 'queued' | 'complete' | 'warning' | 'error'
@@ -19,22 +24,42 @@ type StageState = 'ready' | 'active' | 'queued' | 'complete' | 'warning' | 'erro
 interface WorkflowRailProps {
   analysis: AnalysisResult | null
   companyLabel: string
+  progress: AnalysisProgress | null
   profileLabel: string
   runStatus: RunStatus
 }
 
 interface Stage {
+  agents?: Array<{ label: string; state: AnalysisProgressState }>
   icon: LucideIcon
   label: string
   meta: string
   state: StageState
 }
 
+const phaseStage: Record<AnalysisProgressPhase, number> = {
+  queued: 0,
+  specialists: 1,
+  validation: 2,
+  synthesis: 3,
+  persistence: 4,
+  complete: 5,
+  failed: -1,
+}
+
 function stageState(
   runStatus: RunStatus,
   stageIndex: number,
   degraded = false,
+  progress: AnalysisProgress | null = null,
 ): StageState {
+  if (progress) {
+    if (progress.phase === 'failed') return stageIndex <= 1 ? 'error' : 'queued'
+    const activeStage = phaseStage[progress.phase]
+    if (activeStage === 5 || stageIndex < activeStage) return degraded ? 'warning' : 'complete'
+    if (stageIndex === activeStage) return 'active'
+    return 'queued'
+  }
   if (runStatus === 'error') return stageIndex < 2 ? 'error' : 'queued'
   if (runStatus === 'complete') return degraded ? 'warning' : 'complete'
   if (runStatus === 'running') {
@@ -57,6 +82,7 @@ function StateIcon({ state }: { state: StageState }) {
 export function WorkflowRail({
   analysis,
   companyLabel,
+  progress,
   profileLabel,
   runStatus,
 }: WorkflowRailProps) {
@@ -65,20 +91,31 @@ export function WorkflowRail({
   const maxAgentLatency = analysis
     ? Math.max(...analysis.agents.map((agent) => agent.latency_ms))
     : null
+  const agentProgress = progress ? [
+    { label: 'Market', state: progress.agents.market_signal },
+    { label: 'Filings', state: progress.agents.filing_research },
+    { label: 'Portfolio', state: progress.agents.portfolio_risk },
+  ] : undefined
+  const completedAgentCount = agentProgress?.filter(
+    (agent) => ['completed', 'degraded', 'failed'].includes(agent.state),
+  ).length ?? 0
   const stages: Stage[] = [
     {
       icon: Braces,
       label: 'Input snapshot',
       meta: companyLabel && profileLabel ? `${companyLabel} · ${profileLabel}` : 'Select research inputs',
-      state: stageState(runStatus, 0),
+      state: stageState(runStatus, 0, false, progress),
     },
     {
       icon: UsersRound,
       label: 'Parallel specialists',
       meta: maxAgentLatency === null
-        ? 'Market · Filing · Portfolio'
+        ? progress
+          ? `${completedAgentCount}/3 specialists returned`
+          : 'Market · Filing · Portfolio'
         : `3 agents · slowest ${maxAgentLatency}ms`,
-      state: stageState(runStatus, 1, degradedAgents > 0),
+      state: stageState(runStatus, 1, degradedAgents > 0, progress),
+      agents: agentProgress,
     },
     {
       icon: GitMerge,
@@ -86,7 +123,7 @@ export function WorkflowRail({
       meta: analysis
         ? `${analysis.metrics.evidence_count} items · ${analysis.conflicts.length} conflicts`
         : 'Citations and conflicts',
-      state: stageState(runStatus, 2, degraded),
+      state: stageState(runStatus, 2, degraded, progress),
     },
     {
       icon: Sparkles,
@@ -94,7 +131,7 @@ export function WorkflowRail({
       meta: analysis
         ? `${analysis.recommendation.action} · ${Math.round(analysis.recommendation.confidence * 100)}% confidence`
         : 'Personalized recommendation',
-      state: stageState(runStatus, 3, degraded),
+      state: stageState(runStatus, 3, degraded, progress),
     },
     {
       icon: Database,
@@ -102,7 +139,7 @@ export function WorkflowRail({
       meta: analysis
         ? `${analysis.metrics.end_to_end_latency_ms}ms end to end`
         : 'Metrics and audit trail',
-      state: stageState(runStatus, 4, degraded),
+      state: stageState(runStatus, 4, degraded, progress),
     },
   ]
   const overallLabel = runStatus === 'running'
@@ -142,6 +179,18 @@ export function WorkflowRail({
                 </div>
                 <strong>{stage.label}</strong>
                 <small>{stage.meta}</small>
+                {stage.agents && (
+                  <div className="workflow-stage__agents">
+                    {stage.agents.map((agent) => (
+                      <span
+                        className={`workflow-agent workflow-agent--${agent.state}`}
+                        key={agent.label}
+                      >
+                        <i aria-hidden="true" />{agent.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </article>
               {index < stages.length - 1 && (
                 <ChevronRight aria-hidden="true" className="workflow-rail__connector" size={14} />
@@ -151,7 +200,9 @@ export function WorkflowRail({
         })}
       </div>
       {runStatus === 'running' && (
-        <p>Node-level results become available together when the validated graph completes.</p>
+        <p>
+          Live backend progress · {progress?.phase.replaceAll('_', ' ') ?? 'starting workflow'}
+        </p>
       )}
     </section>
   )

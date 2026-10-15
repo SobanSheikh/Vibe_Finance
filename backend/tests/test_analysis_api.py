@@ -30,6 +30,9 @@ def test_analysis_runs_end_to_end_in_background() -> None:
     assert job_response.status_code == 200
     job = job_response.json()
     assert job["status"] == "completed"
+    assert job["progress"]["phase"] == "complete"
+    assert set(job["progress"]["agents"].values()) == {"completed"}
+    assert "compose_recommendation" in job["progress"]["completed_nodes"]
     assert len(job["result"]["agents"]) == 3
     assert len(job["result"]["agents"][0]["signals"]) == 3
     assert job["result"]["metrics"]["evidence_count"] == 5

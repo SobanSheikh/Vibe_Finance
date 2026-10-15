@@ -34,10 +34,12 @@ limits.
 ## Demonstration procedure
 
 1. Sync an official SEC filing and wait for indexing to complete.
-2. Run one company for a conservative profile and record the recommendation,
-   concentration, accuracy, citations, and latency.
-3. Run the same company for an aggressive profile. Market and filing facts remain
-   unchanged while portfolio suitability can change.
+2. Open **Evaluation**, select one company and two different investor profiles,
+   then run the comparison. The dashboard launches both persisted analysis jobs
+   together and verifies whether their returned market evidence matches.
+3. Compare recommendation, confidence, portfolio fit, concentration, evidence,
+   conflicts, and latency side by side. The proof banner only confirms controlled
+   personalization when market evidence matches and a portfolio-aware outcome changes.
 4. Demonstrate a missing filing or unavailable provider. The affected agent is
    marked degraded, its warning is visible, and the workflow completes with
    bounded confidence.

@@ -39,6 +39,23 @@ export interface AgentResult {
   latency_ms: number
 }
 
+export type AnalysisProgressPhase =
+  | 'queued'
+  | 'specialists'
+  | 'validation'
+  | 'synthesis'
+  | 'persistence'
+  | 'complete'
+  | 'failed'
+
+export type AnalysisProgressState = 'queued' | 'running' | 'completed' | 'degraded' | 'failed'
+
+export interface AnalysisProgress {
+  phase: AnalysisProgressPhase
+  agents: Record<AgentResult['agent'], AnalysisProgressState>
+  completed_nodes: string[]
+}
+
 export interface AnalysisResult {
   session_id: string
   status: 'completed' | 'degraded' | 'failed'
@@ -70,8 +87,27 @@ export interface AnalysisResult {
 interface AnalysisJob {
   session_id: string
   status: 'pending' | 'running' | 'completed' | 'degraded' | 'failed'
+  progress: AnalysisProgress
   result: AnalysisResult | null
   error: string | null
+}
+
+export interface AnalysisHistoryItem {
+  session_id: string
+  status: AnalysisJob['status']
+  company_id: string
+  profile_id: string
+  company_symbol: string
+  as_of_date: string
+  started_at: string
+  completed_at: string | null
+  recommendation_action: AnalysisResult['recommendation']['action'] | null
+  recommendation_summary: string | null
+  recommendation_confidence: number | null
+  end_to_end_latency_ms: number | null
+  evidence_count: number | null
+  portfolio_concentration_score: number | null
+  signal_accuracy_30d: number | null
 }
 
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
@@ -88,6 +124,7 @@ const analysisPollDelay = (attempt: number) => {
 export async function runAnalysis(
   company: Company,
   investorProfile: InvestorProfile,
+  onProgress?: (progress: AnalysisProgress) => void,
 ): Promise<AnalysisResult> {
   const createResponse = await fetch(`${apiUrl}/api/analysis`, {
     method: 'POST',
@@ -109,12 +146,22 @@ export async function runAnalysis(
 
   if (!createResponse.ok) throw new Error('Could not start the analysis workflow.')
   const accepted = (await createResponse.json()) as { session_id: string }
+  onProgress?.({
+    phase: 'queued',
+    agents: {
+      market_signal: 'queued',
+      filing_research: 'queued',
+      portfolio_risk: 'queued',
+    },
+    completed_nodes: [],
+  })
 
   for (let attempt = 0; attempt < 24; attempt += 1) {
     await wait(analysisPollDelay(attempt))
     const jobResponse = await fetch(`${apiUrl}/api/analysis/${accepted.session_id}`)
     if (!jobResponse.ok) throw new Error('Could not retrieve the analysis result.')
     const job = (await jobResponse.json()) as AnalysisJob
+    onProgress?.(job.progress)
 
     if ((job.status === 'completed' || job.status === 'degraded') && job.result) {
       return job.result
@@ -123,4 +170,26 @@ export async function runAnalysis(
   }
 
   throw new Error('The analysis did not complete within the expected time.')
+}
+
+export async function getAnalysisHistory(filters: {
+  companyId?: string
+  profileId?: string
+  limit?: number
+} = {}): Promise<AnalysisHistoryItem[]> {
+  const params = new URLSearchParams()
+  if (filters.companyId) params.set('company_id', filters.companyId)
+  if (filters.profileId) params.set('profile_id', filters.profileId)
+  params.set('limit', String(filters.limit ?? 30))
+  const response = await fetch(`${apiUrl}/api/analysis?${params}`)
+  if (!response.ok) throw new Error('Could not load analysis history.')
+  return response.json() as Promise<AnalysisHistoryItem[]>
+}
+
+export async function getSavedAnalysis(sessionId: string): Promise<AnalysisResult> {
+  const response = await fetch(`${apiUrl}/api/analysis/${sessionId}`)
+  if (!response.ok) throw new Error('Could not load the saved analysis.')
+  const job = (await response.json()) as AnalysisJob
+  if (!job.result) throw new Error('This analysis does not have a completed result yet.')
+  return job.result
 }

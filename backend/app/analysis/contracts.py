@@ -35,6 +35,24 @@ class AnalysisJobStatus(StrEnum):
     FAILED = "failed"
 
 
+class AnalysisProgressPhase(StrEnum):
+    QUEUED = "queued"
+    SPECIALISTS = "specialists"
+    VALIDATION = "validation"
+    SYNTHESIS = "synthesis"
+    PERSISTENCE = "persistence"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class AnalysisProgressState(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    DEGRADED = "degraded"
+    FAILED = "failed"
+
+
 class SignalDimension(StrEnum):
     PRICE_MOMENTUM = "price_momentum"
     VOLUME_ANOMALY = "volume_anomaly"
@@ -178,8 +196,33 @@ class AnalysisJobAccepted(StrictModel):
     status: AnalysisJobStatus
 
 
+class AnalysisProgress(StrictModel):
+    phase: AnalysisProgressPhase
+    agents: dict[AgentName, AnalysisProgressState]
+    completed_nodes: list[str] = Field(default_factory=list)
+
+
 class AnalysisJob(StrictModel):
     session_id: UUID
     status: AnalysisJobStatus
+    progress: AnalysisProgress
     result: AnalysisResponse | None = None
     error: str | None = None
+
+
+class AnalysisHistoryItem(StrictModel):
+    session_id: UUID
+    status: AnalysisJobStatus
+    company_id: UUID
+    profile_id: UUID
+    company_symbol: str
+    as_of_date: date
+    started_at: datetime
+    completed_at: datetime | None = None
+    recommendation_action: RecommendationAction | None = None
+    recommendation_summary: str | None = None
+    recommendation_confidence: float | None = Field(default=None, ge=0, le=1)
+    end_to_end_latency_ms: int | None = Field(default=None, ge=0)
+    evidence_count: int | None = Field(default=None, ge=0)
+    portfolio_concentration_score: float | None = Field(default=None, ge=0, le=1)
+    signal_accuracy_30d: float | None = Field(default=None, ge=0, le=1)

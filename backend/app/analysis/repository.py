@@ -1,13 +1,18 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.analysis.contracts import (
+    AgentName,
     AgentStatus,
+    AnalysisHistoryItem,
     AnalysisJob,
     AnalysisJobStatus,
+    AnalysisProgress,
+    AnalysisProgressPhase,
+    AnalysisProgressState,
     AnalysisRequest,
     AnalysisResponse,
 )
@@ -139,9 +144,62 @@ class AnalysisRepository:
             return AnalysisJob(
                 session_id=record.id,
                 status=AnalysisJobStatus(record.status.value),
+                progress=_persisted_progress(record.status, result),
                 result=result,
                 error=error,
             )
+
+    def list_history(
+        self,
+        *,
+        profile_id: UUID | None = None,
+        company_id: UUID | None = None,
+        limit: int = 30,
+    ) -> list[AnalysisHistoryItem]:
+        statement = select(AnalysisSession).order_by(AnalysisSession.started_at.desc()).limit(limit)
+        if profile_id is not None:
+            statement = statement.where(AnalysisSession.profile_id == profile_id)
+        if company_id is not None:
+            statement = statement.where(AnalysisSession.company_id == company_id)
+
+        with self._session_factory() as session:
+            records = session.scalars(statement).all()
+            items: list[AnalysisHistoryItem] = []
+            for record in records:
+                result = (
+                    AnalysisResponse.model_validate(record.result_snapshot)
+                    if record.result_snapshot
+                    else None
+                )
+                company_snapshot = record.input_snapshot.get("company", {})
+                items.append(
+                    AnalysisHistoryItem(
+                        session_id=record.id,
+                        status=AnalysisJobStatus(record.status.value),
+                        company_id=record.company_id,
+                        profile_id=record.profile_id,
+                        company_symbol=str(company_snapshot.get("symbol", "Unknown")),
+                        as_of_date=record.as_of_date,
+                        started_at=record.started_at,
+                        completed_at=record.completed_at,
+                        recommendation_action=(result.recommendation.action if result else None),
+                        recommendation_summary=(result.recommendation.summary if result else None),
+                        recommendation_confidence=(
+                            result.recommendation.confidence if result else None
+                        ),
+                        end_to_end_latency_ms=(
+                            result.metrics.end_to_end_latency_ms if result else None
+                        ),
+                        evidence_count=result.metrics.evidence_count if result else None,
+                        portfolio_concentration_score=(
+                            result.metrics.portfolio_concentration_score if result else None
+                        ),
+                        signal_accuracy_30d=(
+                            result.metrics.signal_accuracy_30d if result else None
+                        ),
+                    )
+                )
+            return items
 
 
 def _degraded_reasons(response: AnalysisResponse) -> list[str]:
@@ -152,3 +210,43 @@ def _degraded_reasons(response: AnalysisResponse) -> list[str]:
         reasons.extend(result.warnings)
         reasons.extend(error.message for error in result.errors)
     return list(dict.fromkeys(reasons))
+
+
+def _persisted_progress(
+    status: RunStatus,
+    result: AnalysisResponse | None,
+) -> AnalysisProgress:
+    if result is not None:
+        return AnalysisProgress(
+            phase=AnalysisProgressPhase.COMPLETE,
+            agents={
+                agent.agent: AnalysisProgressState(agent.status.value) for agent in result.agents
+            },
+            completed_nodes=[
+                "market_agent",
+                "filing_agent",
+                "portfolio_agent",
+                "validate_evidence",
+                "resolve_conflicts",
+                "compose_recommendation",
+                "collect_metrics",
+            ],
+        )
+    phase = (
+        AnalysisProgressPhase.FAILED
+        if status == RunStatus.FAILED
+        else AnalysisProgressPhase.SPECIALISTS
+        if status == RunStatus.RUNNING
+        else AnalysisProgressPhase.QUEUED
+    )
+    agent_state = (
+        AnalysisProgressState.FAILED
+        if status == RunStatus.FAILED
+        else AnalysisProgressState.RUNNING
+        if status == RunStatus.RUNNING
+        else AnalysisProgressState.QUEUED
+    )
+    return AnalysisProgress(
+        phase=phase,
+        agents={agent: agent_state for agent in AgentName},
+    )

@@ -11,6 +11,7 @@ import {
   Sparkles,
   TrendingUp,
   UserRound,
+  UserPlus,
   Waves,
   Upload,
   RefreshCw,
@@ -19,6 +20,7 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import {
   runAnalysis as requestAnalysis,
+  type AnalysisProgress,
   type AnalysisResult,
   type Signal,
   type SignalTone,
@@ -44,20 +46,25 @@ import {
 import { AgentCard } from './components/AgentCard'
 import { Button } from './components/Button'
 import { CitationCard } from './components/CitationCard'
+import { ComparisonView } from './components/ComparisonView'
 import { CustomSelect } from './components/CustomSelect'
+import { InvestorOnboarding } from './components/InvestorOnboarding'
+import { PortfolioView } from './components/PortfolioView'
+import { ResearchHistoryView } from './components/ResearchHistoryView'
 import { RecommendationBanner } from './components/RecommendationBanner'
 import { SignalCard } from './components/SignalCard'
 import { WorkflowRail } from './components/WorkflowRail'
 
 type ApiStatus = 'checking' | 'connected' | 'unavailable'
 type RunStatus = 'idle' | 'running' | 'complete' | 'error'
+type WorkspaceView = 'workspace' | 'research' | 'portfolio' | 'evaluation'
 
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 const navigation = [
-  { label: 'Workspace', icon: LayoutDashboard, active: true },
-  { label: 'Research', icon: Search },
-  { label: 'Portfolio', icon: BriefcaseBusiness },
-  { label: 'Evaluation', icon: Activity },
+  { label: 'Workspace', icon: LayoutDashboard, view: 'workspace' as const },
+  { label: 'Research', icon: Search, view: 'research' as const },
+  { label: 'Portfolio', icon: BriefcaseBusiness, view: 'portfolio' as const },
+  { label: 'Evaluation', icon: Activity, view: 'evaluation' as const },
 ]
 
 const riskLabels: Record<RiskTolerance, string> = {
@@ -117,6 +124,15 @@ function signalValue(signal: Signal): string {
 }
 
 function App() {
+  const [activeView, setActiveView] = useState<WorkspaceView>(() =>
+    window.location.hash === '#evaluation'
+      ? 'evaluation'
+      : window.location.hash === '#portfolio'
+        ? 'portfolio'
+        : window.location.hash === '#research'
+          ? 'research'
+          : 'workspace',
+  )
   const [apiStatus, setApiStatus] = useState<ApiStatus>('checking')
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
   const [companies, setCompanies] = useState<Company[]>([])
@@ -136,6 +152,8 @@ function App() {
   const [uploadInputKey, setUploadInputKey] = useState(0)
   const [secSyncJob, setSecSyncJob] = useState<SecSyncJob | null>(null)
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null)
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const activeFilingIds = filingDocuments
@@ -272,6 +290,7 @@ function App() {
 
   const resetAnalysis = () => {
     setAnalysis(null)
+    setAnalysisProgress(null)
     setRunStatus('idle')
     setError(null)
   }
@@ -279,9 +298,10 @@ function App() {
   const runSelectedAnalysis = async () => {
     if (!selectedCompany || !selectedProfile) return
     setRunStatus('running')
+    setAnalysisProgress(null)
     setError(null)
     try {
-      setAnalysis(await requestAnalysis(selectedCompany, selectedProfile))
+      setAnalysis(await requestAnalysis(selectedCompany, selectedProfile, setAnalysisProgress))
       setRunStatus('complete')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'The analysis workflow failed.')
@@ -367,6 +387,12 @@ function App() {
     'processing',
   ].includes(secSyncJob.status)
 
+  const navigateTo = (view: WorkspaceView) => {
+    setActiveView(view)
+    const target = view === 'workspace' ? window.location.pathname : `#${view}`
+    window.history.replaceState(null, '', target)
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -375,11 +401,17 @@ function App() {
           <span>VibeFinance</span>
         </a>
         <nav className="sidebar__nav" aria-label="Primary navigation">
-          {navigation.map(({ label, icon: Icon, active }) => (
-            <a className={active ? 'nav-item nav-item--active' : 'nav-item'} href="#" key={label}>
+          {navigation.map(({ label, icon: Icon, view }) => (
+            <button
+              aria-current={activeView === view ? 'page' : undefined}
+              className={activeView === view ? 'nav-item nav-item--active' : 'nav-item'}
+              key={label}
+              onClick={() => navigateTo(view)}
+              type="button"
+            >
               <Icon aria-hidden="true" size={17} />
               <span>{label}</span>
-            </a>
+            </button>
           ))}
         </nav>
         <section className="system-card" aria-label="System status">
@@ -401,51 +433,116 @@ function App() {
       <main className="workspace">
         <header className="workspace-header">
           <div>
-            <span className="eyebrow">Intelligence workspace</span>
-            <h1>Research decision room</h1>
+            <span className="eyebrow">
+              {activeView === 'evaluation'
+                ? 'Evaluation workspace'
+                : activeView === 'portfolio'
+                  ? 'Investor workspace'
+                  : activeView === 'research'
+                    ? 'Research archive'
+                    : 'Intelligence workspace'}
+            </span>
+            <h1>
+              {activeView === 'evaluation'
+                ? 'Personalization comparison'
+                : activeView === 'portfolio'
+                  ? 'Portfolio and risk policy'
+                  : activeView === 'research'
+                    ? 'Analysis history'
+                    : 'Research decision room'}
+            </h1>
           </div>
           <div className="workspace-header__actions">
-            <CustomSelect
-              ariaLabel="Company"
-              disabled={apiStatus !== 'connected'}
-              icon={<Building2 aria-hidden="true" size={15} />}
-              onChange={(value) => {
-                setFilingDocuments([])
-                setSelectedCompanyId(value)
-                resetAnalysis()
-              }}
-              options={companyOptions}
-              placeholder="Select company"
-              value={selectedCompanyId}
-            />
-            <CustomSelect
-              ariaLabel="Investor profile"
-              disabled={apiStatus !== 'connected'}
-              icon={<UserRound aria-hidden="true" size={15} />}
-              onChange={(value) => {
-                setHoldings([])
-                setSelectedProfileId(value)
-                resetAnalysis()
-              }}
-              options={profileOptions}
-              placeholder="Select investor"
-              value={selectedProfileId}
-            />
+            {(activeView === 'workspace' || activeView === 'evaluation') && (
+              <CustomSelect
+                ariaLabel="Company"
+                disabled={apiStatus !== 'connected'}
+                icon={<Building2 aria-hidden="true" size={15} />}
+                onChange={(value) => {
+                  setFilingDocuments([])
+                  setSelectedCompanyId(value)
+                  resetAnalysis()
+                }}
+                options={companyOptions}
+                placeholder="Select company"
+                value={selectedCompanyId}
+              />
+            )}
+            {(activeView === 'workspace' || activeView === 'portfolio') && (
+              <CustomSelect
+                ariaLabel="Investor profile"
+                disabled={apiStatus !== 'connected'}
+                icon={<UserRound aria-hidden="true" size={15} />}
+                onChange={(value) => {
+                  setHoldings([])
+                  setSelectedProfileId(value)
+                  resetAnalysis()
+                }}
+                options={profileOptions}
+                placeholder="Select investor"
+                value={selectedProfileId}
+              />
+            )}
             <Button
-              disabled={
-                runStatus === 'running' ||
-                apiStatus !== 'connected' ||
-                !selectedCompany ||
-                !selectedProfile
-              }
-              icon={<Sparkles aria-hidden="true" size={16} />}
-              onClick={runSelectedAnalysis}
+              disabled={apiStatus !== 'connected'}
+              icon={<UserPlus aria-hidden="true" size={16} />}
+              onClick={() => setOnboardingOpen(true)}
+              variant="secondary"
             >
-              {runStatus === 'running' ? 'Running agents…' : 'Run intelligence'}
+              New investor
             </Button>
+            {activeView === 'workspace' && (
+              <>
+                <Button
+                  disabled={
+                    runStatus === 'running' ||
+                    apiStatus !== 'connected' ||
+                    !selectedCompany ||
+                    !selectedProfile
+                  }
+                  icon={<Sparkles aria-hidden="true" size={16} />}
+                  onClick={runSelectedAnalysis}
+                >
+                  {runStatus === 'running' ? 'Running agents…' : 'Run intelligence'}
+                </Button>
+              </>
+            )}
           </div>
         </header>
 
+        {error && activeView !== 'workspace' && (
+          <div className="error-notice" role="alert">{error}</div>
+        )}
+
+        {activeView === 'evaluation' ? (
+          <ComparisonView
+            apiConnected={apiStatus === 'connected'}
+            company={selectedCompany}
+            initialProfileId={selectedProfileId}
+            key={selectedCompanyId}
+            profiles={profiles}
+          />
+        ) : activeView === 'portfolio' ? (
+          <PortfolioView
+            apiConnected={apiStatus === 'connected'}
+            companies={companies}
+            key={selectedProfileId}
+            onHoldingsChanged={setHoldings}
+            onProfileChanged={(updated) => {
+              setProfiles((current) => current.map((profile) =>
+                profile.id === updated.id ? updated : profile))
+              resetAnalysis()
+            }}
+            profile={selectedProfile}
+          />
+        ) : activeView === 'research' ? (
+          <ResearchHistoryView
+            apiConnected={apiStatus === 'connected'}
+            companies={companies}
+            profiles={profiles}
+          />
+        ) : (
+          <>
         <div className="demo-notice" role="note">
           {hasLiveMarketEvidence && hasRealFilingEvidence
             ? 'Live evidence: market observations, indexed filings, and stored portfolio holdings are active.'
@@ -463,6 +560,7 @@ function App() {
 
         <WorkflowRail
           analysis={analysis}
+          progress={analysisProgress}
           companyLabel={selectedCompany?.symbol ?? ''}
           profileLabel={selectedProfile?.name ?? ''}
           runStatus={runStatus}
@@ -794,7 +892,27 @@ function App() {
             </p>
           </aside>
         </div>
+          </>
+        )}
       </main>
+      {onboardingOpen && (
+        <InvestorOnboarding
+          companies={companies}
+          onClose={() => setOnboardingOpen(false)}
+          onComplete={(profile, holding, warning) => {
+            setProfiles((current) => [...current, profile].sort((left, right) =>
+              left.name.localeCompare(right.name)))
+            setSelectedProfileId(profile.id)
+            setHoldings(holding ? [holding] : [])
+            setAnalysis(null)
+            setAnalysisProgress(null)
+            setRunStatus('idle')
+            setError(warning)
+            setOnboardingOpen(false)
+            navigateTo('portfolio')
+          }}
+        />
+      )}
     </div>
   )
 }
