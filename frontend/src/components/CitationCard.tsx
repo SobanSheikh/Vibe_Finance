@@ -5,13 +5,23 @@ interface CitationCardProps {
   quote: string
   source: string
   sourceUrl?: string | null
+  stance?: 'supporting' | 'opposing' | 'context'
 }
 
-export function CitationCard({ document, quote, source, sourceUrl }: CitationCardProps) {
+export function CitationCard({
+  document,
+  quote,
+  source,
+  sourceUrl,
+  stance = 'context',
+}: CitationCardProps) {
   return (
     <article className="citation-card">
       <header>
         <span>{document}</span>
+        <span className={`citation-card__stance citation-card__stance--${stance}`}>
+          {stance}
+        </span>
         {sourceUrl ? (
           <a
             aria-label={`Open source for ${document}`}

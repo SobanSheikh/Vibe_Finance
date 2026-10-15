@@ -68,6 +68,10 @@ export function getFilingDocuments(companyId: string): Promise<FilingDocument[]>
   ).then((response) => parseResponse<FilingDocument[]>(response))
 }
 
+export function getFilingDownloadUrl(documentId: string): string {
+  return `${apiUrl}/api/filings/documents/${encodeURIComponent(documentId)}/download`
+}
+
 export function retryFilingDocument(documentId: string): Promise<FilingDocument> {
   return fetch(`${apiUrl}/api/filings/documents/${documentId}/retry`, {
     method: 'POST',

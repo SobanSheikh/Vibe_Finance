@@ -1,4 +1,6 @@
+import re
 from datetime import date
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import (
@@ -7,6 +9,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Response,
     UploadFile,
     status,
 )
@@ -32,17 +35,25 @@ from app.filings.sec_jobs import (
     SecSyncJobNotFoundError,
     sec_sync_jobs,
 )
-from app.filings.storage import FilingStorageError
+from app.filings.storage import FilingStorageError, SupabaseFilingStorage
 from app.filings.uploads import (
     FilingUploadError,
     FilingUploadService,
     get_filing_document,
+    get_filing_download_source,
     list_filing_documents,
     prepare_filing_retry,
     validate_pdf_upload,
 )
 
 router = APIRouter(prefix="/api/filings", tags=["filings"])
+
+
+def _content_disposition(file_name: str) -> str:
+    fallback = re.sub(r"[^A-Za-z0-9._-]+", "_", file_name).strip("._")
+    fallback = fallback[:150] or "filing-download"
+    encoded = quote(file_name, safe="")
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
 
 
 @router.post(
@@ -156,6 +167,63 @@ def get_document(document_id: UUID) -> FilingDocumentResponse:
     if document is None:
         raise HTTPException(status_code=404, detail="Filing document not found")
     return document
+
+
+@router.get(
+    "/documents/{document_id}/download",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "The original uploaded or synchronized filing",
+            "content": {
+                "application/pdf": {},
+                "text/html": {},
+                "application/octet-stream": {},
+            },
+        },
+        404: {"description": "Filing document not found"},
+        409: {"description": "Filing has no stored source file"},
+        502: {"description": "Stored file could not be loaded"},
+        503: {"description": "Private filing storage is not configured"},
+    },
+)
+def download_document(document_id: UUID) -> Response:
+    try:
+        source = get_filing_download_source(document_id)
+    except FilingUploadError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if source is None:
+        raise HTTPException(status_code=404, detail="Filing document not found")
+
+    settings = get_settings()
+    backend_key = settings.supabase_backend_key
+    if not settings.supabase_url or not backend_key or backend_key.startswith("sb_publishable_"):
+        raise HTTPException(
+            status_code=503,
+            detail="Private filing storage is not configured",
+        )
+    try:
+        storage = SupabaseFilingStorage(
+            settings.supabase_url,
+            backend_key,
+            settings.filing_storage_bucket,
+        )
+        content = storage.download(
+            source.storage_path,
+            settings.filing_max_download_mb * 1024 * 1024,
+        )
+    except FilingStorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return Response(
+        content=content,
+        media_type=source.mime_type,
+        headers={
+            "Content-Disposition": _content_disposition(source.file_name),
+            "Cache-Control": "private, max-age=300",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post(

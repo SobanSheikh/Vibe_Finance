@@ -54,6 +54,8 @@ export interface AnalysisResult {
     confidence: number
     summary: string
     rationale: string[]
+    supporting_evidence_ids: string[]
+    opposing_evidence_ids: string[]
     personalized_risks: string[]
     disclaimer: string
   }

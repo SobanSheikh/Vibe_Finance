@@ -9,7 +9,7 @@ portfolio risk through a multi-agent workflow.
 - `frontend/` — React, TypeScript, and Vite dashboard
 - `backend/` — FastAPI application and agent orchestration
 - `supabase/` — versioned PostgreSQL and pgvector migrations
-- `docs/` — architecture, evaluation, and demo documentation
+- `docs/` — [architecture](docs/architecture.md) and [evaluation](docs/evaluation.md)
 
 ## Local development
 
@@ -46,3 +46,12 @@ npm run supabase -- --version
 ```
 
 Run other commands with `npm run supabase -- <command>` or `npx supabase <command>`.
+
+## Required backend configuration
+
+Copy `backend/.env.example` to `backend/.env`, configure PostgreSQL and private
+Supabase credentials, and set `SEC_USER_AGENT` to the application name plus a
+real contact email. Apply migrations with `npx supabase db push` before starting
+FastAPI.
+
+See the architecture and evaluation documents before running the judging demo.

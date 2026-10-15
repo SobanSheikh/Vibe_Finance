@@ -2,6 +2,7 @@ import {
   Activity,
   BriefcaseBusiness,
   Building2,
+  Download,
   FileSearch,
   FileText,
   LayoutDashboard,
@@ -32,6 +33,7 @@ import {
   type RiskTolerance,
 } from './api/catalog'
 import {
+  getFilingDownloadUrl,
   getFilingDocuments,
   retryFilingDocument,
   syncSecFilings,
@@ -42,8 +44,10 @@ import {
 import { AgentCard } from './components/AgentCard'
 import { Button } from './components/Button'
 import { CitationCard } from './components/CitationCard'
+import { CustomSelect } from './components/CustomSelect'
 import { RecommendationBanner } from './components/RecommendationBanner'
 import { SignalCard } from './components/SignalCard'
+import { WorkflowRail } from './components/WorkflowRail'
 
 type ApiStatus = 'checking' | 'connected' | 'unavailable'
 type RunStatus = 'idle' | 'running' | 'complete' | 'error'
@@ -61,6 +65,14 @@ const riskLabels: Record<RiskTolerance, string> = {
   medium: 'Balanced',
   high: 'Aggressive',
 }
+
+const filingTypeOptions = [
+  { value: 'annual_report', label: 'Annual report', description: 'Full-year audited disclosure' },
+  { value: 'quarterly_report', label: 'Quarterly report', description: 'Interim financial disclosure' },
+  { value: 'earnings_release', label: 'Earnings release', description: 'Results and management commentary' },
+  { value: 'investor_presentation', label: 'Investor presentation', description: 'Official investor materials' },
+  { value: 'regulatory_filing', label: 'Regulatory filing', description: 'Other official filing' },
+]
 
 const agentPresentation = {
   market_signal: { name: 'Market Signal Agent', icon: TrendingUp },
@@ -222,6 +234,16 @@ function App() {
 
   const selectedCompany = companies.find((company) => company.id === selectedCompanyId)
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId)
+  const companyOptions = companies.map((company) => ({
+    value: company.id,
+    label: `${company.symbol} · ${company.exchange}`,
+    description: company.name,
+  }))
+  const profileOptions = profiles.map((profile) => ({
+    value: profile.id,
+    label: `${profile.name} · ${riskLabels[profile.risk_tolerance]}`,
+    description: `${profile.investment_horizon_years}y horizon · ${Number(profile.max_position_percent)}% max position`,
+  }))
   const hasReadyFiling = filingDocuments.some(
     (document) => document.processing_status === 'completed',
   )
@@ -234,6 +256,13 @@ function App() {
     () => analysis?.agents.flatMap((agent) => agent.evidence) ?? [],
     [analysis],
   )
+  const supportingEvidenceIds = new Set(
+    analysis?.recommendation.supporting_evidence_ids ?? [],
+  )
+  const opposingEvidenceIds = new Set(
+    analysis?.recommendation.opposing_evidence_ids ?? [],
+  )
+  const degradedWarnings = analysis?.agents.flatMap((agent) => agent.warnings) ?? []
   const hasLiveMarketEvidence = evidence.some(
     (item) => !item.is_synthetic && item.source_name === 'Yahoo Finance',
   )
@@ -376,40 +405,32 @@ function App() {
             <h1>Research decision room</h1>
           </div>
           <div className="workspace-header__actions">
-            <label className="selector" aria-label="Company">
-              <Building2 aria-hidden="true" size={15} />
-              <select
-                onChange={(event) => {
-                  setFilingDocuments([])
-                  setSelectedCompanyId(event.target.value)
-                  resetAnalysis()
-                }}
-                value={selectedCompanyId}
-              >
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.symbol} · {company.exchange}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="selector" aria-label="Investor profile">
-              <UserRound aria-hidden="true" size={15} />
-              <select
-                onChange={(event) => {
-                  setHoldings([])
-                  setSelectedProfileId(event.target.value)
-                  resetAnalysis()
-                }}
-                value={selectedProfileId}
-              >
-                {profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name} · {riskLabels[profile.risk_tolerance]}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <CustomSelect
+              ariaLabel="Company"
+              disabled={apiStatus !== 'connected'}
+              icon={<Building2 aria-hidden="true" size={15} />}
+              onChange={(value) => {
+                setFilingDocuments([])
+                setSelectedCompanyId(value)
+                resetAnalysis()
+              }}
+              options={companyOptions}
+              placeholder="Select company"
+              value={selectedCompanyId}
+            />
+            <CustomSelect
+              ariaLabel="Investor profile"
+              disabled={apiStatus !== 'connected'}
+              icon={<UserRound aria-hidden="true" size={15} />}
+              onChange={(value) => {
+                setHoldings([])
+                setSelectedProfileId(value)
+                resetAnalysis()
+              }}
+              options={profileOptions}
+              placeholder="Select investor"
+              value={selectedProfileId}
+            />
             <Button
               disabled={
                 runStatus === 'running' ||
@@ -433,6 +454,19 @@ function App() {
               : 'Ready: run intelligence to retrieve market, filing, and portfolio evidence.'}
         </div>
         {error && <div className="error-notice" role="alert">{error}</div>}
+        {analysis?.status === 'degraded' && (
+          <div className="degraded-notice" role="status">
+            <strong>Analysis completed with limited evidence.</strong>
+            {degradedWarnings.length > 0 && ` ${degradedWarnings.join(' ')}`}
+          </div>
+        )}
+
+        <WorkflowRail
+          analysis={analysis}
+          companyLabel={selectedCompany?.symbol ?? ''}
+          profileLabel={selectedProfile?.name ?? ''}
+          runStatus={runStatus}
+        />
 
         <RecommendationBanner
           confidence={Math.round((analysis?.recommendation.confidence ?? 0) * 100)}
@@ -488,7 +522,9 @@ function App() {
                       key={agent.agent}
                       latency={`${agent.latency_ms}ms`}
                       name={presentation.name}
+                      status={agent.status}
                       summary={agent.summary}
+                      warnings={agent.warnings}
                     />
                   )
                 }) : <p className="empty-state">Agent outputs will appear here.</p>}
@@ -534,20 +570,17 @@ function App() {
                   />
                 </label>
                 <div className="filing-metadata__row">
-                  <label>
+                  <div className="filing-field">
                     <span>Document type</span>
-                    <select
+                    <CustomSelect
+                      ariaLabel="Document type"
                       disabled={uploadProgress !== null}
-                      onChange={(event) => setFilingDocumentType(event.target.value)}
+                      onChange={setFilingDocumentType}
+                      options={filingTypeOptions}
                       value={filingDocumentType}
-                    >
-                      <option value="annual_report">Annual report</option>
-                      <option value="quarterly_report">Quarterly report</option>
-                      <option value="earnings_release">Earnings release</option>
-                      <option value="investor_presentation">Investor presentation</option>
-                      <option value="regulatory_filing">Regulatory filing</option>
-                    </select>
-                  </label>
+                      variant="field"
+                    />
+                  </div>
                   <label>
                     <span>Reporting period</span>
                     <input
@@ -634,7 +667,7 @@ function App() {
                 {filingDocuments.map((document) => (
                   <div className="filing-document" key={document.id}>
                     <FileText aria-hidden="true" size={16} />
-                    <div>
+                    <div className="filing-document__body">
                       <strong>{document.title}</strong>
                       <span>
                         {document.processing_status === 'completed'
@@ -647,11 +680,22 @@ function App() {
                       </span>
                       {document.error_message && <small>{document.error_message}</small>}
                     </div>
-                    {document.processing_status === 'failed' && (
-                      <button onClick={() => retryFiling(document.id)} type="button">
-                        Retry
-                      </button>
-                    )}
+                    <div className="filing-document__actions">
+                      {document.file_name && (
+                        <a
+                          aria-label={`Download ${document.title}`}
+                          href={getFilingDownloadUrl(document.id)}
+                          title="Download original file"
+                        >
+                          <Download aria-hidden="true" size={14} />
+                        </a>
+                      )}
+                      {document.processing_status === 'failed' && (
+                        <button onClick={() => retryFiling(document.id)} type="button">
+                          Retry
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -697,6 +741,13 @@ function App() {
                     quote={item.observation}
                     source={`${item.source_name}${item.page_number ? ` · p.${item.page_number}` : ''}`}
                     sourceUrl={item.source_url}
+                    stance={
+                      supportingEvidenceIds.has(item.id)
+                        ? 'supporting'
+                        : opposingEvidenceIds.has(item.id)
+                          ? 'opposing'
+                          : 'context'
+                    }
                   />
                 )) : <p className="empty-state">Cited evidence will appear here.</p>}
               </div>
@@ -705,15 +756,17 @@ function App() {
             <section className="conflict-card">
               <h3>Evidence conflict map</h3>
               <div className="conflict-list">
-                {signals.length ? signals.map((signal) => (
-                  <div className="conflict-row" key={signal.dimension}>
-                    <span>{signalPresentation[signal.dimension].label}</span>
-                    <strong className={`tone-${signalTone(signal.classification)}`}>
-                      <span className="conflict-row__dot" />
-                      {signalValue(signal)}
-                    </strong>
+                {analysis?.conflicts.length ? analysis.conflicts.map((conflict) => (
+                  <div className="conflict-item" key={`${conflict.dimension}-${conflict.description}`}>
+                    <strong>{conflict.dimension.replaceAll('_', ' ')}</strong>
+                    <p>{conflict.description}</p>
+                    <span>{conflict.agent_names.map((name) => (
+                      agentPresentation[name as keyof typeof agentPresentation]?.name ?? name
+                    )).join(' ↔ ')}</span>
                   </div>
-                )) : <p className="empty-state">No evidence has been compared yet.</p>}
+                )) : analysis
+                  ? <p className="no-conflicts">No material agent conflicts detected.</p>
+                  : <p className="empty-state">No evidence has been compared yet.</p>}
               </div>
             </section>
 
@@ -722,7 +775,9 @@ function App() {
                 <h3>Session evaluation</h3>
                 <span>{analysis.metrics.evidence_count} evidence items</span>
                 <span>
-                  {Math.round((analysis.metrics.portfolio_concentration_score ?? 0) * 100)}% concentration risk
+                  {analysis.metrics.portfolio_concentration_score === null
+                    ? 'Concentration unavailable'
+                    : `${Math.round(analysis.metrics.portfolio_concentration_score * 100)}% concentration risk`}
                 </span>
                 <span>
                   {analysis.metrics.signal_accuracy_30d === null

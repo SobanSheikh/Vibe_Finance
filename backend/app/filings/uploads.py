@@ -1,5 +1,6 @@
 import asyncio
 import re
+from dataclasses import dataclass
 from datetime import date
 from hashlib import sha256
 from uuid import UUID, uuid4
@@ -20,6 +21,13 @@ from app.filings.storage import SupabaseFilingStorage
 
 class FilingUploadError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class FilingDownloadSource:
+    storage_path: str
+    file_name: str
+    mime_type: str
 
 
 def validate_pdf_upload(
@@ -305,6 +313,22 @@ def get_filing_document(document_id: UUID) -> FilingDocumentResponse | None:
     with get_session_factory()() as session:
         document = session.get(FinancialDocument, document_id)
         return filing_document_response(document) if document else None
+
+
+def get_filing_download_source(document_id: UUID) -> FilingDownloadSource | None:
+    """Return private storage metadata without exposing it in the public document model."""
+
+    with get_session_factory()() as session:
+        document = session.get(FinancialDocument, document_id)
+        if document is None:
+            return None
+        if not document.storage_path:
+            raise FilingUploadError("This filing does not have a stored source file")
+        return FilingDownloadSource(
+            storage_path=document.storage_path,
+            file_name=document.file_name or "filing-download",
+            mime_type=document.mime_type or "application/octet-stream",
+        )
 
 
 def list_filing_documents(company_id: UUID) -> list[FilingDocumentResponse]:
