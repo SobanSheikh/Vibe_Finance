@@ -121,6 +121,7 @@ class AgentResult(StrictModel):
     evidence: list[Evidence] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     errors: list[AgentError] = Field(default_factory=list)
+    metrics: dict[str, float] = Field(default_factory=dict)
     latency_ms: int = Field(ge=0)
 
     @model_validator(mode="after")

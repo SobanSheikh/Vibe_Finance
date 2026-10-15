@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from copy import deepcopy
 from threading import Lock
 from time import perf_counter
@@ -19,6 +20,7 @@ from app.analysis.demo import (
     demo_portfolio_agent,
 )
 from app.analysis.graph import build_analysis_graph
+from app.analysis.repository import AnalysisRepository
 from app.analysis.synthesis import LlmRecommendationComposer, build_synthesis_agent
 from app.config import get_settings
 from app.db.session import get_session_factory
@@ -34,18 +36,20 @@ class AnalysisNotFoundError(LookupError):
     pass
 
 
-class InMemoryAnalysisService:
-    """Process-local job service for the end-to-end demo workflow.
+logger = logging.getLogger(__name__)
 
-    The interface is deliberately isolated so a durable Supabase/Celery-backed
-    implementation can replace it without changing HTTP routes or graph nodes.
-    """
+
+class AnalysisService:
+    """Run jobs locally while persisting lifecycle and validated results in PostgreSQL."""
 
     def __init__(self) -> None:
         self._jobs: dict[UUID, AnalysisJob] = {}
         self._requests: dict[UUID, AnalysisRequest] = {}
         self._lock = Lock()
         settings = get_settings()
+        self._repository = (
+            AnalysisRepository(get_session_factory()) if settings.database_url else None
+        )
         chat_model = build_chat_model(settings)
         market_agent = (
             build_market_agent(YahooFinanceProvider())
@@ -55,9 +59,7 @@ class InMemoryAnalysisService:
         portfolio_agent = (
             build_portfolio_agent(
                 get_session_factory(),
-                fallback=(
-                    demo_portfolio_agent if settings.market_data_mode == "demo" else None
-                ),
+                fallback=(demo_portfolio_agent if settings.market_data_mode == "demo" else None),
             )
             if settings.database_url
             else None
@@ -91,6 +93,8 @@ class InMemoryAnalysisService:
     def create(self, request: AnalysisRequest) -> AnalysisJobAccepted:
         session_id = uuid4()
         job = AnalysisJob(session_id=session_id, status=AnalysisJobStatus.PENDING)
+        if self._repository is not None:
+            self._repository.create(session_id, request)
         with self._lock:
             self._jobs[session_id] = job
             self._requests[session_id] = request
@@ -99,9 +103,13 @@ class InMemoryAnalysisService:
     def get(self, session_id: UUID) -> AnalysisJob:
         with self._lock:
             job = self._jobs.get(session_id)
-            if job is None:
-                raise AnalysisNotFoundError(str(session_id))
-            return deepcopy(job)
+            if job is not None:
+                return deepcopy(job)
+        if self._repository is not None:
+            persisted = self._repository.get_job(session_id)
+            if persisted is not None:
+                return persisted
+        raise AnalysisNotFoundError(str(session_id))
 
     async def run(self, session_id: UUID) -> None:
         with self._lock:
@@ -109,6 +117,8 @@ class InMemoryAnalysisService:
             self._jobs[session_id].status = AnalysisJobStatus.RUNNING
 
         try:
+            if self._repository is not None:
+                await asyncio.to_thread(self._repository.mark_running, session_id)
             state = await asyncio.to_thread(
                 self._graph.invoke,
                 {"request": request, "started_at_monotonic": perf_counter()},
@@ -135,20 +145,30 @@ class InMemoryAnalysisService:
                 self._jobs[session_id] = AnalysisJob(
                     session_id=session_id,
                     status=(
-                        AnalysisJobStatus.DEGRADED
-                        if degraded
-                        else AnalysisJobStatus.COMPLETED
+                        AnalysisJobStatus.DEGRADED if degraded else AnalysisJobStatus.COMPLETED
                     ),
                     result=response,
                 )
+            if self._repository is not None:
+                await asyncio.to_thread(self._repository.complete, response)
         except Exception:
+            logger.exception("Analysis session %s failed", session_id)
             with self._lock:
                 self._jobs[session_id] = AnalysisJob(
                     session_id=session_id,
                     status=AnalysisJobStatus.FAILED,
                     error="The analysis workflow failed. Review server logs for details.",
                 )
+            if self._repository is not None:
+                try:
+                    await asyncio.to_thread(
+                        self._repository.fail,
+                        session_id,
+                        "The analysis workflow failed. Review server logs for details.",
+                    )
+                except Exception:
+                    logger.exception("Could not persist failure for analysis %s", session_id)
             raise
 
 
-analysis_service = InMemoryAnalysisService()
+analysis_service = AnalysisService()

@@ -13,7 +13,11 @@ from app.analysis.contracts import (
     SignalDimension,
 )
 from app.analysis.state import AnalysisState
-from app.market.analytics import MarketAnalytics, calculate_market_analytics
+from app.market.analytics import (
+    MarketAnalytics,
+    calculate_market_analytics,
+    calculate_momentum_accuracy_30d,
+)
 from app.market.models import MarketDataError, MarketDataProvider
 
 LOW_VOLATILITY_THRESHOLD = 0.20
@@ -76,6 +80,7 @@ def build_market_agent(
         try:
             bars = provider.history(company.symbol, company.exchange)
             analytics = calculate_market_analytics(bars)
+            signal_accuracy = calculate_momentum_accuracy_30d(bars)
         except MarketDataError as exc:
             return {
                 "market_result": AgentResult(
@@ -165,6 +170,9 @@ def build_market_agent(
                     ),
                 ],
                 evidence=[return_evidence, volume_evidence, volatility_evidence],
+                metrics=(
+                    {"signal_accuracy_30d": signal_accuracy} if signal_accuracy is not None else {}
+                ),
                 latency_ms=ceil((perf_counter() - started_at) * 1000),
             )
         }

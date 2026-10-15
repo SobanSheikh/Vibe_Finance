@@ -233,6 +233,7 @@ class AnalysisSession(Base):
     input_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     degraded_reasons: Mapped[list[Any]] = mapped_column(JSONB, default=list)
+    result_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

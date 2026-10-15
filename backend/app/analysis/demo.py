@@ -85,6 +85,7 @@ def _market_agent(_: AnalysisState) -> dict[str, AgentResult]:
             ],
             evidence=evidence,
             warnings=["Synthetic demo data; live market adapter is not connected."],
+            metrics={"signal_accuracy_30d": 0.64},
             latency_ms=ceil((perf_counter() - started_at) * 1000),
         )
     }
@@ -134,9 +135,7 @@ def demo_portfolio_agent(state: AnalysisState) -> dict[str, AgentResult]:
     started_at = perf_counter()
     profile = state["request"].investor_profile
     conservative = profile.risk_tolerance == RiskTolerance.LOW
-    classification = (
-        SignalClassification.NEGATIVE if conservative else SignalClassification.NEUTRAL
-    )
+    classification = SignalClassification.NEGATIVE if conservative else SignalClassification.NEUTRAL
     observation = (
         "Synthetic energy exposure is 41%, above the conservative demo limit of 35%."
         if conservative
@@ -172,6 +171,7 @@ def demo_portfolio_agent(state: AnalysisState) -> dict[str, AgentResult]:
             ],
             evidence=[evidence],
             warnings=["Synthetic portfolio; Supabase holdings adapter is not connected."],
+            metrics={"concentration_score": 0.41},
             latency_ms=ceil((perf_counter() - started_at) * 1000),
         )
     }
@@ -199,8 +199,7 @@ def _resolve_conflicts(state: AnalysisState) -> dict[str, list[EvidenceConflict]
         result.agent
         for result in results
         if any(
-            signal.classification
-            in {SignalClassification.NEGATIVE, SignalClassification.MIXED}
+            signal.classification in {SignalClassification.NEGATIVE, SignalClassification.MIXED}
             for signal in result.signals
         )
     }
@@ -215,9 +214,7 @@ def _resolve_conflicts(state: AnalysisState) -> dict[str, list[EvidenceConflict]
                     "Positive market signals conflict with filing or personalized portfolio risk."
                 ),
                 agent_names=involved,
-                evidence_ids=[
-                    evidence.id for result in results for evidence in result.evidence
-                ],
+                evidence_ids=[evidence.id for result in results for evidence in result.evidence],
             )
         ]
     }
@@ -259,18 +256,15 @@ def compose_deterministic_recommendation(
 
 def _collect_metrics(state: AnalysisState) -> dict[str, SessionMetrics]:
     results = [state["market_result"], state["filing_result"], state["portfolio_result"]]
-    portfolio_negative = (
-        state["portfolio_result"].signals[0].classification == SignalClassification.NEGATIVE
-    )
     return {
         "metrics": SessionMetrics(
-            end_to_end_latency_ms=ceil(
-                (perf_counter() - state["started_at_monotonic"]) * 1000
-            ),
+            end_to_end_latency_ms=ceil((perf_counter() - state["started_at_monotonic"]) * 1000),
             agent_latency_ms={item.agent: item.latency_ms for item in results},
             evidence_count=sum(len(item.evidence) for item in results),
-            portfolio_concentration_score=0.82 if portfolio_negative else 0.58,
-            signal_accuracy_30d=None,
+            portfolio_concentration_score=state["portfolio_result"].metrics.get(
+                "concentration_score"
+            ),
+            signal_accuracy_30d=state["market_result"].metrics.get("signal_accuracy_30d"),
         )
     }
 
@@ -289,8 +283,6 @@ def build_demo_nodes(
         portfolio_agent=portfolio_agent or demo_portfolio_agent,
         validate_evidence=_validate_evidence,
         resolve_conflicts=_resolve_conflicts,
-        compose_recommendation=(
-            compose_recommendation or compose_deterministic_recommendation
-        ),
+        compose_recommendation=(compose_recommendation or compose_deterministic_recommendation),
         collect_metrics=_collect_metrics,
     )

@@ -33,6 +33,8 @@ def test_analysis_runs_end_to_end_in_background() -> None:
     assert len(job["result"]["agents"]) == 3
     assert len(job["result"]["agents"][0]["signals"]) == 3
     assert job["result"]["metrics"]["evidence_count"] == 5
+    assert job["result"]["metrics"]["portfolio_concentration_score"] == 0.41
+    assert job["result"]["metrics"]["signal_accuracy_30d"] == 0.64
     assert job["result"]["recommendation"]["action"] == "monitor"
     assert job["result"]["conflicts"]
 

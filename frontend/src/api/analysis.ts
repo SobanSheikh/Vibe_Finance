@@ -34,6 +34,8 @@ export interface AgentResult {
   confidence: number
   signals: Signal[]
   evidence: Evidence[]
+  warnings: string[]
+  metrics: Record<string, number>
   latency_ms: number
 }
 
@@ -59,6 +61,7 @@ export interface AnalysisResult {
     end_to_end_latency_ms: number
     evidence_count: number
     portfolio_concentration_score: number | null
+    signal_accuracy_30d: number | null
   }
 }
 

@@ -724,6 +724,11 @@ function App() {
                 <span>
                   {Math.round((analysis.metrics.portfolio_concentration_score ?? 0) * 100)}% concentration risk
                 </span>
+                <span>
+                  {analysis.metrics.signal_accuracy_30d === null
+                    ? 'Accuracy needs 61 sessions'
+                    : `${Math.round(analysis.metrics.signal_accuracy_30d * 100)}% 30-session signal accuracy`}
+                </span>
                 <span>{analysis.conflicts.length} detected conflict</span>
               </section>
             )}

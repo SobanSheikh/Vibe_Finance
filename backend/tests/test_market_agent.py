@@ -25,9 +25,9 @@ class StubProvider:
         first_day = date(2026, 1, 1)
         bars = [
             MarketBar(first_day + timedelta(days=index), 100 + index, 1_000 + index)
-            for index in range(31)
+            for index in range(91)
         ]
-        bars[-1] = MarketBar(bars[-1].trading_date, 140, 5_000)
+        bars[-1] = MarketBar(bars[-1].trading_date, 210, 5_000)
         return bars
 
 
@@ -62,6 +62,7 @@ def test_market_agent_returns_cited_deterministic_signals() -> None:
     assert len(result.evidence) == 3
     assert {item.source_name for item in result.evidence} == {"Test market provider"}
     assert all(not item.is_synthetic for item in result.evidence)
+    assert result.metrics["signal_accuracy_30d"] >= 0
 
 
 def test_market_agent_degrades_without_uncited_output() -> None:

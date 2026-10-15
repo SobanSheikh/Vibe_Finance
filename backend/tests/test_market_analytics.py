@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.market.analytics import calculate_market_analytics
+from app.market.analytics import calculate_market_analytics, calculate_momentum_accuracy_30d
 from app.market.models import MarketBar, MarketDataError
 
 
@@ -28,3 +28,10 @@ def test_market_analytics_calculates_momentum_volume_and_volatility() -> None:
 def test_market_analytics_requires_enough_complete_history() -> None:
     with pytest.raises(MarketDataError, match="31 complete"):
         calculate_market_analytics(market_bars(30))
+
+
+def test_momentum_accuracy_uses_only_completed_forward_windows() -> None:
+    bars = market_bars(91)
+
+    assert calculate_momentum_accuracy_30d(bars) == 1.0
+    assert calculate_momentum_accuracy_30d(bars[:60]) is None

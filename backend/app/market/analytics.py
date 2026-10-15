@@ -12,6 +12,27 @@ class MarketAnalytics:
     annualized_volatility: float
 
 
+def calculate_momentum_accuracy_30d(bars: list[MarketBar]) -> float | None:
+    """Backtest 30-session momentum labels against the following 30 sessions."""
+    ordered = sorted(bars, key=lambda item: item.trading_date)
+    if len(ordered) < 61:
+        return None
+
+    def classify(value: float) -> int:
+        if value >= 0.05:
+            return 1
+        if value <= -0.05:
+            return -1
+        return 0
+
+    outcomes = []
+    for index in range(30, len(ordered) - 30):
+        momentum = ordered[index].close / ordered[index - 30].close - 1
+        forward_return = ordered[index + 30].close / ordered[index].close - 1
+        outcomes.append(classify(momentum) == classify(forward_return))
+    return round(sum(outcomes) / len(outcomes), 4) if outcomes else None
+
+
 def calculate_market_analytics(bars: list[MarketBar]) -> MarketAnalytics:
     """Calculate signals from chronological, daily market bars."""
 

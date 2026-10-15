@@ -80,9 +80,7 @@ def build_portfolio_agent(
             breaches.append("sector")
         if position_percent > position_limit:
             breaches.append("position")
-        classification = (
-            SignalClassification.NEGATIVE if breaches else SignalClassification.NEUTRAL
-        )
+        classification = SignalClassification.NEGATIVE if breaches else SignalClassification.NEUTRAL
         observation = (
             f"{company.sector} represents {sector_percent:.1f}% of portfolio cost basis "
             f"(limit {sector_limit:.1f}%); {company.symbol} represents "
@@ -116,6 +114,11 @@ def build_portfolio_agent(
                     )
                 ],
                 evidence=[evidence],
+                metrics={
+                    "concentration_score": round(max(sector_percent, position_percent) / 100, 4),
+                    "sector_exposure": round(sector_percent / 100, 4),
+                    "position_exposure": round(position_percent / 100, 4),
+                },
                 latency_ms=ceil((perf_counter() - started_at) * 1000),
             )
         }
