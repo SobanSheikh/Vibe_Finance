@@ -19,6 +19,7 @@ supabase/.temp/
 
 # Editors and OS
 .DS_Store
+.~lock.*#
 .idea/
 .vscode/
 
